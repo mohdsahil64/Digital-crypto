@@ -1,0 +1,23 @@
+{
+  "name": "Decentralized World",
+  "short_name": "DW",
+  "description": "Wallet-based Web3 community on BNB Smart Chain. Build your team, earn daily rewards.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#060b1a",
+  "theme_color": "#060b1a",
+  "icons": [
+    {
+      "src": "/globe.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/og-image.png",
+      "sizes": "1200x630",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "name": "decentralized-world-contracts",
+  "version": "1.0.0",
+  "description": "Smart contracts for Decentralized World DApp (BSC mainnet)",
+  "scripts": {
+    "compile": "hardhat compile",
+    "deploy:bsc": "hardhat run scripts/deploy.js --network bsc",
+    "verify": "hardhat verify --network bsc"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "hardhat": "^2.22.10"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.0.2",
+    "dotenv": "^16.4.5"
+  }
+}
