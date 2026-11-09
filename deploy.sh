@@ -1,21 +1,14 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# deploy.sh — One-command deploy for Decentralized World on VPS
+# deploy.sh — One-command deploy for Decentralized World
+# VPS path: /www/wwwroot/decentralizeed.site
 #
 # Usage:
-#   ./deploy.sh          — smart deploy (only restarts what changed)
+#   ./deploy.sh          — smart deploy (only rebuilds what changed)
 #   ./deploy.sh --full   — force full rebuild + restart of everything
-#
-# What it does:
-#   1. git pull (latest code)
-#   2. Detect which parts changed (backend / frontend)
-#   3. backend changed  → npm install + pm2 restart dw-backend
-#   4. frontend changed → npm install + vite build + nginx reload
-#   5. schema changed   → run DB migration automatically
-#   6. Print a clean summary at the end
 # ─────────────────────────────────────────────────────────────────────────────
 
-set -euo pipefail
+set -uo pipefail
 
 # ── Colors ───────────────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
@@ -24,46 +17,52 @@ CYAN='\033[0;36m'; BOLD='\033[1m'; RESET='\033[0m'
 info()    { echo -e "${CYAN}[INFO]${RESET}  $*"; }
 success() { echo -e "${GREEN}[OK]${RESET}    $*"; }
 warn()    { echo -e "${YELLOW}[WARN]${RESET}  $*"; }
-error()   { echo -e "${RED}[ERROR]${RESET} $*"; exit 1; }
-header()  { echo -e "\n${BOLD}${CYAN}══ $* ══${RESET}"; }
+error()   { echo -e "${RED}[ERROR]${RESET} $*"; }
+header()  { echo -e "\n${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"; echo -e "${BOLD}${CYAN}  $*${RESET}"; echo -e "${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"; }
+fail()    { echo -e "${RED}[FAILED]${RESET} $*"; echo -e "${RED}━━━ Deploy aborted ━━━${RESET}"; exit 1; }
 
 # ── Config ───────────────────────────────────────────────────────────────────
-APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APP_DIR="/www/wwwroot/decentralizeed.site"
 BACKEND_DIR="$APP_DIR/backend"
 FRONTEND_DIR="$APP_DIR/frontend"
+NGINX_PID="/www/server/nginx/logs/nginx.pid"
 FORCE_FULL=false
 [[ "${1:-}" == "--full" ]] && FORCE_FULL=true
 
-# ── Start ────────────────────────────────────────────────────────────────────
+# ── Start ─────────────────────────────────────────────────────────────────────
 echo -e "\n${BOLD}🚀  Decentralized World — Deploy Script${RESET}"
 echo -e "    Directory : $APP_DIR"
-echo -e "    Mode      : $( $FORCE_FULL && echo 'FULL (forced)' || echo 'Smart (auto-detect changes)' )\n"
+echo -e "    Mode      : $( $FORCE_FULL && echo 'FULL (forced)' || echo 'Smart (auto-detect)' )\n"
 
-# ── 1. Git pull ───────────────────────────────────────────────────────────────
-header "Git Pull"
+# ── Check APP_DIR exists ──────────────────────────────────────────────────────
+if [[ ! -d "$APP_DIR" ]]; then
+  fail "App directory not found: $APP_DIR"
+fi
 cd "$APP_DIR"
 
-# Stash any accidental local changes so pull never fails
-if ! git diff --quiet; then
+# ── Step 1: Git Pull ──────────────────────────────────────────────────────────
+header "Step 1 — Git Pull"
+
+# Stash local changes if any
+if ! git diff --quiet 2>/dev/null; then
   warn "Local changes detected — stashing before pull"
-  git stash push -m "auto-stash before deploy $(date +%Y%m%d-%H%M%S)"
+  git stash push -m "auto-stash before deploy $(date +%Y%m%d-%H%M%S)" || warn "Stash failed, continuing anyway"
 fi
 
-BEFORE=$(git rev-parse HEAD)
-git pull --ff-only origin "$(git rev-parse --abbrev-ref HEAD)"
-AFTER=$(git rev-parse HEAD)
+BEFORE=$(git rev-parse HEAD 2>/dev/null || echo "none")
 
-if [[ "$BEFORE" == "$AFTER" && "$FORCE_FULL" == false ]]; then
-  success "Already up to date ($(git rev-parse --short HEAD)). Nothing to do."
-  exit 0
+info "Pulling latest code from GitHub..."
+if ! git pull --ff-only origin "$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)" 2>&1; then
+  error "Git pull failed. Check your remote/branch."
+  info "Trying: git pull origin main"
+  git pull origin main 2>&1 || fail "Git pull failed. Fix manually then re-run."
 fi
 
-success "Pulled $(git rev-parse --short HEAD) ← $(git rev-parse --short ORIG_HEAD 2>/dev/null || echo 'new')"
+AFTER=$(git rev-parse HEAD 2>/dev/null || echo "none")
+success "Pulled: $(git log -1 --pretty='%h — %s' 2>/dev/null || echo 'unknown')"
 
-# ── 2. Detect what changed ────────────────────────────────────────────────────
-header "Detecting Changes"
-
-CHANGED_FILES=$(git diff --name-only "$BEFORE" "$AFTER" 2>/dev/null || echo "")
+# ── Step 2: Detect Changes ───────────────────────────────────────────────────
+header "Step 2 — Detecting Changes"
 
 BACKEND_CHANGED=false
 FRONTEND_CHANGED=false
@@ -74,112 +73,142 @@ if $FORCE_FULL; then
   FRONTEND_CHANGED=true
   SCHEMA_CHANGED=true
   info "Force full — rebuilding everything"
-else
-  if echo "$CHANGED_FILES" | grep -qE '^backend/'; then
-    BACKEND_CHANGED=true
-    info "Backend changes detected"
-  fi
-  if echo "$CHANGED_FILES" | grep -qE '^backend/src/db/schema\.sql'; then
-    SCHEMA_CHANGED=true
-    info "DB schema changed — migration will run"
-  fi
-  if echo "$CHANGED_FILES" | grep -qE '^frontend/'; then
-    FRONTEND_CHANGED=true
-    info "Frontend changes detected"
-  fi
-  # ecosystem or root-level script changes → restart backend
-  if echo "$CHANGED_FILES" | grep -qE '^ecosystem\.config'; then
-    BACKEND_CHANGED=true
-    info "PM2 config changed — backend will restart"
-  fi
-fi
-
-if ! $BACKEND_CHANGED && ! $FRONTEND_CHANGED; then
-  success "No backend or frontend files changed. Nothing to rebuild."
+elif [[ "$BEFORE" == "$AFTER" ]]; then
+  success "Already up to date. Nothing to do."
   exit 0
+else
+  CHANGED=$(git diff --name-only "$BEFORE" "$AFTER" 2>/dev/null || echo "")
+  echo "$CHANGED" | grep -qE '^backend/' && BACKEND_CHANGED=true && info "Backend changes detected"
+  echo "$CHANGED" | grep -qE '^backend/src/db/schema\.sql' && SCHEMA_CHANGED=true && info "DB schema changed — migration will run"
+  echo "$CHANGED" | grep -qE '^frontend/' && FRONTEND_CHANGED=true && info "Frontend changes detected"
+  echo "$CHANGED" | grep -qE '^ecosystem\.config' && BACKEND_CHANGED=true && info "PM2 config changed"
+
+  if ! $BACKEND_CHANGED && ! $FRONTEND_CHANGED; then
+    success "No backend/frontend files changed. Nothing to rebuild."
+    exit 0
+  fi
 fi
 
-# ── 3. Backend ────────────────────────────────────────────────────────────────
+# ── Step 3: Backend ───────────────────────────────────────────────────────────
 if $BACKEND_CHANGED; then
-  header "Backend"
+  header "Step 3 — Backend"
 
-  cd "$BACKEND_DIR"
+  cd "$BACKEND_DIR" || fail "Backend directory not found: $BACKEND_DIR"
 
+  # Check .env
+  if [[ ! -f ".env" ]]; then
+    fail "backend/.env not found! Copy .env.example and fill values."
+  fi
+  success ".env found"
+
+  # npm install
   info "Installing backend dependencies..."
-  npm install --omit=dev --prefer-offline 2>&1 | tail -3
-  success "npm install done"
+  if ! npm install --omit=dev 2>&1; then
+    fail "npm install failed in backend"
+  fi
+  success "npm install complete"
 
-  # Run DB migration if schema changed
+  # DB Migration
   if $SCHEMA_CHANGED; then
     info "Running database migration..."
-    npm run migrate
+    if ! npm run migrate 2>&1; then
+      fail "DB migration failed — check DATABASE_URL in .env"
+    fi
     success "Migration complete"
+  else
+    info "Schema unchanged — skipping migration"
   fi
 
-  # Restart via PM2
+  # PM2 restart
+  info "Restarting backend via PM2..."
   if pm2 describe dw-backend &>/dev/null; then
-    info "Restarting dw-backend via PM2..."
-    pm2 restart dw-backend
+    if ! pm2 restart dw-backend 2>&1; then
+      fail "PM2 restart failed"
+    fi
     sleep 2
-    # Quick health check
-    if pm2 describe dw-backend | grep -q "online"; then
+    STATUS=$(pm2 describe dw-backend 2>/dev/null | grep "status" | awk '{print $4}' | head -1)
+    if pm2 describe dw-backend 2>/dev/null | grep -q "online"; then
       success "dw-backend is online ✓"
     else
-      error "dw-backend failed to start — check: pm2 logs dw-backend"
+      error "dw-backend may not be running properly"
+      pm2 logs dw-backend --lines 10 --nostream 2>/dev/null || true
+      fail "Backend did not start correctly"
     fi
   else
-    warn "dw-backend not found in PM2 — starting fresh..."
+    warn "dw-backend not in PM2 — starting fresh"
     cd "$APP_DIR"
-    pm2 start ecosystem.config.cjs --env production
+    if ! pm2 start ecosystem.config.cjs --env production 2>&1; then
+      fail "PM2 start failed"
+    fi
     pm2 save
-    success "dw-backend started and saved"
+    success "dw-backend started"
   fi
+
+  cd "$APP_DIR"
 fi
 
-# ── 4. Frontend ───────────────────────────────────────────────────────────────
+# ── Step 4: Frontend ──────────────────────────────────────────────────────────
 if $FRONTEND_CHANGED; then
-  header "Frontend"
+  header "Step 4 — Frontend"
 
-  cd "$FRONTEND_DIR"
+  cd "$FRONTEND_DIR" || fail "Frontend directory not found: $FRONTEND_DIR"
 
-  # Check .env exists
+  # Check .env
   if [[ ! -f ".env" ]]; then
-    error "frontend/.env not found. Copy .env.example and fill in values first."
+    fail "frontend/.env not found! Copy .env.example and fill values."
   fi
+  success ".env found"
 
+  # npm install
   info "Installing frontend dependencies..."
-  npm install --prefer-offline 2>&1 | tail -3
-  success "npm install done"
+  if ! npm install 2>&1; then
+    fail "npm install failed in frontend"
+  fi
+  success "npm install complete"
 
+  # Remove aaPanel's .user.ini that breaks vite build
+  rm -f dist/.user.ini 2>/dev/null && info "Removed .user.ini (aaPanel artifact)"
+
+  # Build
   info "Building frontend (vite build)..."
-  npm run build
-  success "Frontend build complete → dist/"
+  if ! npm run build 2>&1; then
+    fail "Frontend build failed — check errors above"
+  fi
+  success "Frontend built → dist/"
 
-  # Nginx reload (not restart — zero downtime)
-  if command -v nginx &>/dev/null; then
-    info "Reloading Nginx..."
-    if sudo nginx -t &>/dev/null; then
-      sudo systemctl reload nginx
+  # Nginx reload
+  info "Reloading Nginx..."
+  if [[ -f "$NGINX_PID" ]]; then
+    if kill -HUP $(cat "$NGINX_PID") 2>/dev/null; then
       success "Nginx reloaded ✓"
     else
-      warn "Nginx config test failed — skipping reload. Run: sudo nginx -t"
+      warn "Nginx reload failed — try manually: kill -HUP \$(cat $NGINX_PID)"
     fi
   else
-    warn "Nginx not found — skipping reload (serve dist/ manually if needed)"
+    warn "Nginx PID file not found — skipping reload"
   fi
+
+  cd "$APP_DIR"
 fi
 
-# ── 5. Summary ────────────────────────────────────────────────────────────────
+# ── Step 5: Health Check ──────────────────────────────────────────────────────
+header "Step 5 — Health Check"
+
+info "Testing API..."
+HEALTH=$(curl -sk https://decentralizeed.site/api/health 2>/dev/null || curl -s http://localhost:4000/api/health 2>/dev/null || echo "")
+if echo "$HEALTH" | grep -q '"status":"ok"'; then
+  success "API health check passed ✓"
+else
+  error "API health check failed!"
+  error "Response: $HEALTH"
+  warn "Check logs: pm2 logs dw-backend"
+fi
+
+# ── Summary ───────────────────────────────────────────────────────────────────
 header "Deploy Summary"
-echo -e "  Commit    : $(git rev-parse --short HEAD) — $(git log -1 --pretty=%s)"
+echo -e "  Commit    : $(git log -1 --pretty='%h — %s' 2>/dev/null)"
 echo -e "  Backend   : $( $BACKEND_CHANGED  && echo "${GREEN}restarted${RESET}" || echo "unchanged")"
 echo -e "  Migration : $( $SCHEMA_CHANGED   && echo "${GREEN}ran${RESET}"       || echo "skipped")"
 echo -e "  Frontend  : $( $FRONTEND_CHANGED && echo "${GREEN}rebuilt${RESET}"   || echo "unchanged")"
 echo ""
-
-if $BACKEND_CHANGED; then
-  echo -e "  PM2 status:"
-  pm2 status dw-backend --no-color 2>/dev/null | grep -E "name|online|stopped|error" | head -5 || true
-fi
-
-echo -e "\n${GREEN}${BOLD}✅  Deploy complete!${RESET}\n"
+echo -e "${GREEN}${BOLD}✅  Deploy complete! — https://decentralizeed.site${RESET}\n"
