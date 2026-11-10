@@ -67,11 +67,15 @@ header "Step 2 — Detecting Changes"
 BACKEND_CHANGED=false
 FRONTEND_CHANGED=false
 SCHEMA_CHANGED=false
+BACKEND_DEPS_CHANGED=false
+FRONTEND_DEPS_CHANGED=false
 
 if $FORCE_FULL; then
   BACKEND_CHANGED=true
   FRONTEND_CHANGED=true
   SCHEMA_CHANGED=true
+  BACKEND_DEPS_CHANGED=true
+  FRONTEND_DEPS_CHANGED=true
   info "Force full — rebuilding everything"
 elif [[ "$BEFORE" == "$AFTER" ]]; then
   success "Already up to date. Nothing to do."
@@ -82,6 +86,9 @@ else
   echo "$CHANGED" | grep -qE '^backend/src/db/schema\.sql' && SCHEMA_CHANGED=true && info "DB schema changed — migration will run"
   echo "$CHANGED" | grep -qE '^frontend/' && FRONTEND_CHANGED=true && info "Frontend changes detected"
   echo "$CHANGED" | grep -qE '^ecosystem\.config' && BACKEND_CHANGED=true && info "PM2 config changed"
+  # Dependency-file changes (only npm install when package files actually change)
+  echo "$CHANGED" | grep -qE '^backend/(package\.json|package-lock\.json)' && BACKEND_DEPS_CHANGED=true && info "Backend dependencies changed — will npm install"
+  echo "$CHANGED" | grep -qE '^frontend/(package\.json|package-lock\.json)' && FRONTEND_DEPS_CHANGED=true && info "Frontend dependencies changed — will npm install"
 
   if ! $BACKEND_CHANGED && ! $FRONTEND_CHANGED; then
     success "No backend/frontend files changed. Nothing to rebuild."
@@ -101,12 +108,16 @@ if $BACKEND_CHANGED; then
   fi
   success ".env found"
 
-  # npm install
-  info "Installing backend dependencies..."
-  if ! npm install --omit=dev 2>&1; then
-    fail "npm install failed in backend"
+  # npm install (only if package.json / package-lock.json changed)
+  if $BACKEND_DEPS_CHANGED; then
+    info "Installing backend dependencies..."
+    if ! npm install --omit=dev 2>&1; then
+      fail "npm install failed in backend"
+    fi
+    success "npm install complete"
+  else
+    info "Dependencies unchanged — skipping npm install"
   fi
-  success "npm install complete"
 
   # DB Migration
   if $SCHEMA_CHANGED; then
@@ -159,12 +170,16 @@ if $FRONTEND_CHANGED; then
   fi
   success ".env found"
 
-  # npm install
-  info "Installing frontend dependencies..."
-  if ! npm install 2>&1; then
-    fail "npm install failed in frontend"
+  # npm install (only if package.json / package-lock.json changed)
+  if $FRONTEND_DEPS_CHANGED; then
+    info "Installing frontend dependencies..."
+    if ! npm install 2>&1; then
+      fail "npm install failed in frontend"
+    fi
+    success "npm install complete"
+  else
+    info "Dependencies unchanged — skipping npm install"
   fi
-  success "npm install complete"
 
   # Remove aaPanel's .user.ini that breaks vite build
   rm -f dist/.user.ini 2>/dev/null && info "Removed .user.ini (aaPanel artifact)"
@@ -208,7 +223,9 @@ fi
 header "Deploy Summary"
 echo -e "  Commit    : $(git log -1 --pretty='%h — %s' 2>/dev/null)"
 echo -e "  Backend   : $( $BACKEND_CHANGED  && echo "${GREEN}restarted${RESET}" || echo "unchanged")"
+echo -e "  BeDeps    : $( $BACKEND_DEPS_CHANGED  && echo "${GREEN}installed${RESET}" || echo "skipped")"
 echo -e "  Migration : $( $SCHEMA_CHANGED   && echo "${GREEN}ran${RESET}"       || echo "skipped")"
 echo -e "  Frontend  : $( $FRONTEND_CHANGED && echo "${GREEN}rebuilt${RESET}"   || echo "unchanged")"
+echo -e "  FeDeps    : $( $FRONTEND_DEPS_CHANGED && echo "${GREEN}installed${RESET}" || echo "skipped")"
 echo ""
 echo -e "${GREEN}${BOLD}✅  Deploy complete! — https://decentralizeed.site${RESET}\n"
