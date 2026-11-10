@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { useWalletModal } from "../components/WalletModal.jsx";
 import {
   Globe,
@@ -61,7 +61,7 @@ const EARN_STEPS = [
 const HIGHLIGHTS = [
   { icon: Zap, label: "Instant activation" },
   { icon: TrendingUp, label: "Daily payouts" },
-  { icon: Users, label: "15 direct team" },
+  { icon: ShieldCheck, label: "100% on-chain" },
   { icon: Gift, label: "Referral rewards" },
 ];
 
@@ -180,8 +180,8 @@ export default function Hero() {
       {overlay}
       <Seo
         rawTitle
-        title="Decentralized World — Wallet-based Web3 Community on BSC"
-        description="Join a fully wallet-based Web3 community on BNB Smart Chain. Build your team, earn daily level rewards, and grow your on-chain network. No email, no password."
+        title="Decentralized World — Earn Daily USDT Rewards on BSC"
+        description="Join Decentralized World and earn daily USDT rewards on BNB Smart Chain. Build your referral team, unlock 16 reward levels, and withdraw anytime. No email, no password — your wallet is your identity."
       />
 
       {/* Referral toast — shown when arriving from an invite link before connecting. */}
@@ -264,6 +264,12 @@ export default function Hero() {
           <p className="mt-3 text-xs text-slate-500">
             No email, no password · Your wallet is your identity
           </p>
+          <Link
+            to="/how-it-works"
+            className="mt-2 inline-flex items-center gap-1 text-xs text-accent-400 hover:text-accent-300 hover:underline"
+          >
+            How does it work? <ArrowRight className="h-3 w-3" />
+          </Link>
 
           {/* Trust / stats banner — right below the Join button */}
           <div className="mt-10 w-full max-w-2xl overflow-hidden rounded-2xl border border-accent-500/30 bg-gradient-to-r from-accent-500/15 via-navy-900/40 to-fuchsia-500/10 p-6 sm:p-8">

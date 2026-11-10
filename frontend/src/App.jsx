@@ -1,5 +1,6 @@
 import { Routes, Route } from "react-router-dom";
 import Hero from "./pages/Hero.jsx";
+import HowItWorks from "./pages/HowItWorks.jsx";
 import Register from "./pages/Register.jsx";
 import Invest from "./pages/Invest.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
@@ -46,6 +47,7 @@ export default function App() {
       <Route path="/legal/terms" element={<Terms />} />
       <Route path="/legal/risk" element={<RiskDisclaimer />} />
       <Route path="/legal/refund" element={<RefundPolicy />} />
+      <Route path="/how-it-works" element={<HowItWorks />} />
 
       {/* Public landing — connecting happens here. */}
       <Route path="/" element={<MaintenanceGate><Hero /></MaintenanceGate>} />

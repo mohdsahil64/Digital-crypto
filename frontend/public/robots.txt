@@ -1,9 +1,14 @@
-# Decentralized World — robots
 User-agent: *
 Allow: /
+Allow: /how-it-works
 
-# Keep crawlers out of the admin panel
+# Keep crawlers out of the admin panel and user-only pages
 Disallow: /admin
 Disallow: /admin/
+Disallow: /dashboard
+Disallow: /withdraw
+Disallow: /invest
+Disallow: /refer
+Disallow: /team
 
-Sitemap: https://decentralizedworld.app/sitemap.xml
+Sitemap: https://decentralizeed.site/sitemap.xml
