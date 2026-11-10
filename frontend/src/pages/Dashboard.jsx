@@ -13,7 +13,6 @@ import {
   Banknote,
   Sparkles,
   UserCheck,
-  Globe,
 } from "lucide-react";
 import AppLayout from "../components/AppLayout.jsx";
 import Spinner from "../components/Spinner.jsx";
@@ -215,15 +214,8 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* Global network + active members */}
+      {/* Active members — full width row */}
       <div className="mt-3 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatTile
-          icon={Globe}
-          tone="text-sky-400"
-          label="Global team"
-          value={rewards?.globalTeam ?? 0}
-          sub="Whole network"
-        />
         <StatTile
           icon={UserCheck}
           tone="text-emerald-400"

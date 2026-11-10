@@ -12,7 +12,6 @@ import {
   ChevronRight,
   ChevronLeft,
   ArrowRight,
-  Globe,
 } from "lucide-react";
 import AppLayout from "../components/AppLayout.jsx";
 import Spinner from "../components/Spinner.jsx";
@@ -56,17 +55,15 @@ export default function Team() {
 
   const directCount = rewards?.directTeam ?? user?.directCount ?? 0;
   const teamCount = rewards?.totalTeam ?? user?.teamCount ?? 0;
-  const globalTeam = rewards?.globalTeam ?? 0;
   // Direct business = active directs × plan price ($5 each).
   const directBusiness = directCount * 5;
 
   return (
     <AppLayout title="My team">
-      {/* ---------- Totals — Direct / My Team / Global ---------- */}
-      <div className="grid grid-cols-3 gap-2.5">
-        <StatTile icon={UserPlus} tone="text-amber-400" label="Direct team" value={directCount} sub="Direct" />
+      {/* ---------- Totals — Direct / My Team ---------- */}
+      <div className="grid grid-cols-2 gap-2.5">
+        <StatTile icon={UserPlus} tone="text-amber-400" label="Direct team" value={directCount} sub="Directly referred" />
         <StatTile icon={Users} tone="text-fuchsia-400" label="My team" value={teamCount} sub="Direct + indirect" />
-        <StatTile icon={Globe} tone="text-sky-400" label="Global team" value={globalTeam} sub="Network" />
       </div>
 
       {/* ---------- Rewards roadmap (card slider) ---------- */}

@@ -11,7 +11,8 @@ import { useEffect } from "react";
  * `title` is suffixed with the brand automatically unless `rawTitle` is passed.
  */
 const BRAND = "Decentralized World";
-const DEFAULT_IMAGE = "/og-image.png";
+const SITE_URL = "https://decentralizeed.site";
+const DEFAULT_IMAGE = `${SITE_URL}/og-image.png`;
 
 function setMeta(attr, key, content) {
   if (!content) return;
@@ -46,12 +47,8 @@ export default function Seo({
   useEffect(() => {
     document.title = fullTitle;
 
-    // Absolute URL for the current page + share image (crawlers need absolute URLs).
-    const origin =
-      typeof window !== "undefined" ? window.location.origin : "";
-    const url =
-      typeof window !== "undefined" ? window.location.href : origin;
-    const absImage = image?.startsWith("http") ? image : `${origin}${image}`;
+    const url = typeof window !== "undefined" ? window.location.href : SITE_URL;
+    const absImage = image?.startsWith("http") ? image : `${SITE_URL}${image}`;
 
     setMeta("name", "description", description);
     setMeta("name", "robots", noindex ? "noindex, nofollow" : "index, follow");
