@@ -41,61 +41,24 @@ const LEVELS = [
   { level: 16, direct: 1000, team: 1000000, daily: 10000 },
 ];
 
-// Wallet icons — using reliable CDN / data URIs as fallback
 const WALLETS = [
   {
     name: "Trust Wallet",
     bg: "bg-blue-500/15",
     border: "border-blue-500/30",
-    icon: (
-      <svg viewBox="0 0 48 48" className="h-7 w-7" fill="none">
-        <path d="M24 4L8 10v14c0 10 7 19 16 22 9-3 16-12 16-22V10L24 4z" fill="#3375BB"/>
-        <path d="M24 4L8 10v14c0 10 7 19 16 22V4z" fill="#3375BB"/>
-        <path d="M24 4L8 10v14c0 10 7 19 16 22 9-3 16-12 16-22V10L24 4z" fill="url(#tw)" fillOpacity="0.3"/>
-        <defs><linearGradient id="tw" x1="8" y1="4" x2="40" y2="46" gradientUnits="userSpaceOnUse"><stop stopColor="#fff"/><stop offset="1" stopColor="#fff" stopOpacity="0"/></linearGradient></defs>
-      </svg>
-    ),
+    img: "/trust.png",
   },
   {
     name: "MetaMask",
     bg: "bg-orange-500/15",
     border: "border-orange-500/30",
-    icon: (
-      <svg viewBox="0 0 48 48" className="h-7 w-7" fill="none">
-        <path d="M42 6L27 17.5l2.8-6.6L42 6z" fill="#E2761B" stroke="#E2761B" strokeWidth="0.5"/>
-        <path d="M6 6l14.8 11.6-2.6-6.7L6 6z" fill="#E4761B" stroke="#E4761B" strokeWidth="0.5"/>
-        <path d="M36.5 32.5l-4 6.1 8.5 2.4 2.5-8.3-7-.2zM4.5 32.7l2.4 8.3 8.5-2.4-4-6.1-6.9.2z" fill="#E4761B" stroke="#E4761B" strokeWidth="0.5"/>
-        <path d="M14.9 21l-2.4 3.6 8.5.4-.3-9.1L14.9 21zm18.2 0-5.9-5.2-.4 9.2 8.5-.4L33.1 21z" fill="#E4761B" stroke="#E4761B" strokeWidth="0.5"/>
-        <path d="M15.4 38.6l5.1-2.5-4.4-3.4-.7 5.9zm12.1-2.5 5.1 2.5-.8-5.9-4.3 3.4z" fill="#E4761B" stroke="#E4761B" strokeWidth="0.5"/>
-        <circle cx="24" cy="22" r="10" fill="#E4761B" fillOpacity="0.2"/>
-      </svg>
-    ),
-  },
-  {
-    name: "Binance Web3",
-    bg: "bg-yellow-500/15",
-    border: "border-yellow-500/30",
-    icon: (
-      <svg viewBox="0 0 48 48" className="h-7 w-7" fill="none">
-        <rect width="48" height="48" rx="12" fill="#F3BA2F" fillOpacity="0.15"/>
-        <path d="M24 10l3.6 3.6-9.6 9.6-3.6-3.6L24 10zM14.4 19.6l3.6 3.6-3.6 3.6L10.8 23.2l3.6-3.6zM33.6 19.6l3.6 3.6-3.6 3.6-3.6-3.6 3.6-3.6zM24 29.2l3.6 3.6-9.6 9.6-3.6-3.6 9.6-9.6z" fill="#F3BA2F"/>
-        <path d="M24 19.6l3.6 3.6-3.6 3.6-3.6-3.6L24 19.6z" fill="#F3BA2F"/>
-      </svg>
-    ),
+    img: "/metamask.png",
   },
   {
     name: "OKX Wallet",
     bg: "bg-slate-500/15",
     border: "border-slate-500/30",
-    icon: (
-      <svg viewBox="0 0 48 48" className="h-7 w-7" fill="none">
-        <rect width="48" height="48" rx="12" fill="#fff" fillOpacity="0.08"/>
-        <rect x="10" y="10" width="12" height="12" rx="2" fill="white"/>
-        <rect x="26" y="10" width="12" height="12" rx="2" fill="white"/>
-        <rect x="10" y="26" width="12" height="12" rx="2" fill="white"/>
-        <rect x="26" y="26" width="12" height="12" rx="2" fill="white"/>
-      </svg>
-    ),
+    img: "/okx.png",
   },
   {
     name: "TokenPocket",
@@ -103,22 +66,9 @@ const WALLETS = [
     border: "border-blue-400/30",
     icon: (
       <svg viewBox="0 0 48 48" className="h-7 w-7" fill="none">
-        <rect width="48" height="48" rx="12" fill="#2980FE" fillOpacity="0.15"/>
         <path d="M12 14h24v4H12zM12 22h16v4H12zM12 30h20v4H12z" fill="#2980FE"/>
         <circle cx="34" cy="32" r="6" fill="#2980FE"/>
         <path d="M32 32l1.5 1.5L36 30" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-      </svg>
-    ),
-  },
-  {
-    name: "SafePal",
-    bg: "bg-indigo-500/15",
-    border: "border-indigo-500/30",
-    icon: (
-      <svg viewBox="0 0 48 48" className="h-7 w-7" fill="none">
-        <rect width="48" height="48" rx="12" fill="#1A56E8" fillOpacity="0.15"/>
-        <path d="M24 8l-14 7v11c0 8 6 15 14 18 8-3 14-10 14-18V15L24 8z" fill="#1A56E8" fillOpacity="0.3" stroke="#1A56E8" strokeWidth="1.5"/>
-        <path d="M19 24l3 3 7-7" stroke="#1A56E8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
       </svg>
     ),
   },
@@ -270,13 +220,17 @@ export default function HowItWorks() {
             Supported <span className="bg-gradient-to-r from-accent-400 to-accent-600 bg-clip-text text-transparent">Wallets</span>
           </h2>
           <p className="mb-4 text-center text-[11px] text-slate-400 sm:text-xs">Use any of these wallets to connect</p>
-          <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {WALLETS.map((w) => (
               <div
                 key={w.name}
                 className={`flex flex-col items-center gap-2 rounded-xl border ${w.border} ${w.bg} p-3 transition hover:border-white/20`}
               >
-                {w.icon}
+                {w.img ? (
+                  <img src={w.img} alt={w.name} className="h-7 w-7 rounded-lg object-contain" />
+                ) : (
+                  w.icon
+                )}
                 <span className="text-center text-[10px] font-medium leading-tight text-slate-200 sm:text-[11px]">
                   {w.name}
                 </span>
