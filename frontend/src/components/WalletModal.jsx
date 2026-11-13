@@ -5,7 +5,8 @@ import {
   useCallback,
   useMemo,
 } from "react";
-import { useConnect, useAccount, useDisconnect } from "wagmi";
+import { useConnect, useAccount, useDisconnect, useChainId, useSwitchChain } from "wagmi";
+import { bsc } from "wagmi/chains";
 import {
   Wallet,
   X,
@@ -14,8 +15,8 @@ import {
   QrCode,
   ChevronRight,
   ShieldCheck,
-  Fuel,
   Smartphone,
+  Network,
 } from "lucide-react";
 
 const WalletModalContext = createContext(null);
@@ -141,12 +142,16 @@ function openWalletDeepLink(wallet) {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 const CONNECT_TIMEOUT_MS = 20000;
+const BSC_CHAIN_ID = bsc.id; // 56
 
 function WalletPicker({ onClose }) {
   const { connectors, connectAsync } = useConnect();
   const { isConnected } = useAccount();
   const { disconnectAsync } = useDisconnect();
+  const chainId = useChainId();
+  const { switchChainAsync } = useSwitchChain();
   const [pendingUid, setPendingUid] = useState(null);
+  const [switching, setSwitching] = useState(false);
   const [error, setError] = useState("");
 
   const mobile = isMobile();
@@ -166,9 +171,38 @@ function WalletPicker({ onClose }) {
       if (isConnected) {
         try { await disconnectAsync(); } catch { /* ignore */ }
       }
-      await connectWithFallback(connector, connectAsync);
+      const result = await connectWithFallback(connector, connectAsync);
+
+      // After connect — read chain from the connector's provider directly
+      // because wagmi's useChainId hook may not have updated yet.
+      let connectedChainId = null;
+      try {
+        const provider = await connector.getProvider?.();
+        if (provider?.request) {
+          const hexChainId = await provider.request({ method: "eth_chainId" });
+          connectedChainId = parseInt(hexChainId, 16);
+        }
+      } catch { /* ignore */ }
+
+      // Fallback to wagmi hook value
+      if (!connectedChainId) connectedChainId = chainId;
+
+      if (connectedChainId && connectedChainId !== BSC_CHAIN_ID) {
+        setSwitching(true);
+        try {
+          await switchChainAsync({ chainId: BSC_CHAIN_ID });
+        } catch {
+          setError("Please switch to BNB Smart Chain (BSC) to continue.");
+          setSwitching(false);
+          setPendingUid(null);
+          return;
+        }
+        setSwitching(false);
+      }
+
       onClose();
     } catch (e) {
+      setSwitching(false);
       const raw = (e?.shortMessage || e?.message || "").toLowerCase();
       if (raw.includes("already connected")) { onClose(); return; }
       setError(readableError(e, connector));
@@ -177,7 +211,7 @@ function WalletPicker({ onClose }) {
     }
   }
 
-  const anyPending = pendingUid !== null;
+  const anyPending = pendingUid !== null || switching;
 
   // ── Mobile + NOT inside wallet browser → show deep link list ──
   if (mobile && !insideWallet) {
@@ -254,14 +288,16 @@ function WalletPicker({ onClose }) {
               className="mt-3 flex w-full items-center gap-2.5 rounded-xl border border-accent-500/30 bg-accent-500/10 px-3 py-2.5 text-left transition hover:bg-accent-500/15 disabled:opacity-60"
             >
               <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-500/20">
-                {pendingUid === (walletConnectConnector.uid || walletConnectConnector.id) ? (
+                {switching ? (
+                  <Loader2 className="h-4 w-4 animate-spin text-accent-400" />
+                ) : pendingUid === (walletConnectConnector.uid || walletConnectConnector.id) ? (
                   <Loader2 className="h-4 w-4 animate-spin text-accent-400" />
                 ) : (
                   <QrCode className="h-4 w-4 text-accent-400" />
                 )}
               </span>
               <span className="flex-1 text-sm font-medium text-slate-100">
-                Other wallet (WalletConnect)
+                {switching ? "Switching to BSC..." : "Other wallet (WalletConnect)"}
               </span>
               <ChevronRight className="h-4 w-4 text-slate-400" />
             </button>
@@ -317,7 +353,9 @@ function WalletPicker({ onClose }) {
             className="mt-4 flex w-full items-center gap-2.5 rounded-xl bg-accent-500 px-3 py-3 text-left transition hover:bg-accent-400 disabled:opacity-60"
           >
             <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/15">
-              {pendingUid === (walletConnectConnector.uid || walletConnectConnector.id) ? (
+              {switching ? (
+                <Loader2 className="h-4 w-4 animate-spin text-white" />
+              ) : pendingUid === (walletConnectConnector.uid || walletConnectConnector.id) ? (
                 <Loader2 className="h-4 w-4 animate-spin text-white" />
               ) : (
                 <QrCode className="h-4 w-4 text-white" />
@@ -325,9 +363,11 @@ function WalletPicker({ onClose }) {
             </span>
             <span className="flex-1">
               <span className="block text-sm font-semibold text-white">
-                Start Now & Register Now
+                {switching ? "Switching to BSC..." : "Start Now & Register Now"}
               </span>
-              <span className="block text-[11px] text-white/80">Quick setup via QR</span>
+              <span className="block text-[11px] text-white/80">
+                {switching ? "Please approve in your wallet" : "Quick setup via QR"}
+              </span>
             </span>
             <ChevronRight className="h-4 w-4 text-white/90" />
           </button>
@@ -350,8 +390,12 @@ function WalletPicker({ onClose }) {
                 <span className="flex-1 text-sm font-semibold text-slate-100">
                   {friendlyName(c)}
                 </span>
-                {isThisPending ? (
+                {isThisPending && !switching ? (
                   <Loader2 className="h-4 w-4 animate-spin text-accent-400" />
+                ) : isThisPending && switching ? (
+                  <span className="flex items-center gap-1 text-[10px] text-amber-300">
+                    <Network className="h-3 w-3" /> Switching to BSC...
+                  </span>
                 ) : (
                   <span className="rounded-full border border-emerald-500/40 px-2 py-0.5 text-[10px] font-medium text-emerald-300">
                     Ready
@@ -375,12 +419,6 @@ function WalletPicker({ onClose }) {
             <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
             <p className="text-[11px] leading-snug text-slate-400">
               Your data is encrypted and secure. We follow industry-standard security protocols.
-            </p>
-          </div>
-          <div className="flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/5 px-3 py-2.5">
-            <Fuel className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-400" />
-            <p className="text-[11px] leading-snug text-amber-200/90">
-              A small one-time network fee is required to activate your account.
             </p>
           </div>
         </div>

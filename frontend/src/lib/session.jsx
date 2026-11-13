@@ -177,8 +177,9 @@ export function SessionProvider({ children }) {
     }
 
     // Wrong network — block until they switch to BSC.
+    // This runs FIRST before anything else so user can never proceed on wrong chain.
     if (wrongChain) {
-      handledFor.current = null;
+      handledFor.current = null; // reset so we re-check after switch
       setStatus("wrong-chain");
       setError("");
       return;
@@ -258,6 +259,18 @@ export function SessionProvider({ children }) {
 
     return () => { cancelled = true; };
   }, [isConnected, address, wagmiStatus, wrongChain, reset, clearCache, writeCache, authenticate]);
+
+  // ── CHAIN GUARD: whenever chain changes to wrong network, immediately block ──
+  // This fires even after the main effect has already run (e.g. user switches chain
+  // mid-session or wallet connects on wrong chain).
+  useEffect(() => {
+    if (!isConnected || !address) return;
+    if (wrongChain) {
+      handledFor.current = null; // force re-auth after switch
+      setStatus("wrong-chain");
+      setError("");
+    }
+  }, [wrongChain, isConnected, address]);
 
   // Keep the session "fresh" while the user is actively using the site, so an active
   // session doesn't expire mid-use. Bumps verifiedAt on activity + periodically.
