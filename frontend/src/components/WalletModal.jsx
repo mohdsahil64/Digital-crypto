@@ -15,7 +15,6 @@ import {
   QrCode,
   ChevronRight,
   ShieldCheck,
-  Smartphone,
   Network,
 } from "lucide-react";
 
@@ -46,57 +45,27 @@ export function useWalletModal() {
 }
 
 // ─── Mobile wallet deep-link registry ────────────────────────────────────────
-// Each entry: { name, icon (emoji fallback), deepLink(url), universalLink(url) }
-// deepLink    → opens the wallet app directly (custom scheme)
-// universalLink → HTTPS fallback (works on iOS where custom schemes are blocked)
 const MOBILE_WALLETS = [
   {
     id: "trust",
     name: "Trust Wallet",
-    icon: "https://trustwallet.com/assets/images/media/assets/trust_platform.svg",
+    icon: "/trust.png",
     deepLink: (url) => `trust://open_url?coin_id=20000714&url=${encodeURIComponent(url)}`,
     universalLink: (url) => `https://link.trustwallet.com/open_url?coin_id=20000714&url=${encodeURIComponent(url)}`,
-    installUrl: "https://trustwallet.com/download",
   },
   {
     id: "metamask",
     name: "MetaMask",
-    icon: "https://raw.githubusercontent.com/MetaMask/brand-resources/master/SVG/SVG_MetaMask_Icon_Color.svg",
+    icon: "/metamask.png",
     deepLink: (url) => `metamask://dapp/${url.replace(/^https?:\/\//, "")}`,
     universalLink: (url) => `https://metamask.app.link/dapp/${url.replace(/^https?:\/\//, "")}`,
-    installUrl: "https://metamask.io/download/",
-  },
-  {
-    id: "binance",
-    name: "Binance Web3",
-    icon: "https://public.bnbstatic.com/image/cms/blog/20230214/f65d5b56-a0a6-45c5-9ffd-9c7a09b3c53e.png",
-    deepLink: (url) => `bnc://app.binance.com/mp/app?appId=binanceweb3wallet&startPagePath=dapp&startPageQuery=url%3D${encodeURIComponent(url)}`,
-    universalLink: (url) => `https://app.binance.com/mp/app?appId=binanceweb3wallet&startPagePath=dapp&startPageQuery=url%3D${encodeURIComponent(url)}`,
-    installUrl: "https://www.binance.com/en/download",
   },
   {
     id: "okx",
     name: "OKX Wallet",
-    icon: "https://static.okx.com/cdn/assets/imgs/221/7B9E56E4B94AAC17.png",
+    icon: "/okx.png",
     deepLink: (url) => `okx://main/dapp/url?dappUrl=${encodeURIComponent(url)}`,
     universalLink: (url) => `https://www.okx.com/download?deeplink=${encodeURIComponent(`okx://main/dapp/url?dappUrl=${encodeURIComponent(url)}`)}`,
-    installUrl: "https://www.okx.com/web3",
-  },
-  {
-    id: "tokenpocket",
-    name: "TokenPocket",
-    icon: "https://www.tokenpocket.pro/favicon.ico",
-    deepLink: (url) => `tpdapp://open?params=${encodeURIComponent(JSON.stringify({ url, chain: "BSC" }))}`,
-    universalLink: (url) => `https://tokenpocket.pro/dapp?url=${encodeURIComponent(url)}`,
-    installUrl: "https://www.tokenpocket.pro/en/download/app",
-  },
-  {
-    id: "safepal",
-    name: "SafePal",
-    icon: "https://safepal.com/favicon.ico",
-    deepLink: (url) => `safepal://dapp?url=${encodeURIComponent(url)}`,
-    universalLink: (url) => `https://safepal.com/dapp?url=${encodeURIComponent(url)}`,
-    installUrl: "https://safepal.com/download",
   },
 ];
 
@@ -217,7 +186,7 @@ function WalletPicker({ onClose }) {
   if (mobile && !insideWallet) {
     return (
       <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-        <div className="relative w-full max-w-xs rounded-t-2xl border border-white/10 bg-navy-900 p-4 shadow-2xl sm:max-w-sm sm:rounded-2xl sm:p-5">
+        <div className="relative w-full max-w-xs rounded-t-2xl border border-white/10 bg-navy-900 p-5 shadow-2xl sm:max-w-sm sm:rounded-2xl">
           {/* Close */}
           <button
             onClick={onClose}
@@ -229,86 +198,81 @@ function WalletPicker({ onClose }) {
 
           {/* Header */}
           <div className="flex flex-col items-center text-center">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-accent-500/15 ring-1 ring-accent-500/30">
-              <Smartphone className="h-5 w-5 text-accent-400" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent-500/15 ring-1 ring-accent-500/30">
+              <Wallet className="h-5 w-5 text-accent-400" />
             </div>
-            <h3 className="mt-3 font-display text-lg font-bold">Choose your wallet</h3>
-            <p className="mt-0.5 text-xs text-slate-400">
-              Tap a wallet to open it and connect
+            <h3 className="mt-2.5 font-display text-base font-bold">Connect Wallet</h3>
+            <p className="mt-0.5 text-[11px] text-slate-400">
+              Choose your wallet to get started
             </p>
           </div>
 
           {error && (
-            <div className="mt-4 flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-2.5 py-2 text-[11px] text-red-300">
+            <div className="mt-3 flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-2.5 py-2 text-[11px] text-red-300">
               <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
               <span>{error}</span>
             </div>
           )}
 
-          {/* Mobile wallet list */}
+          {/* 3 Main wallets */}
           <div className="mt-4 space-y-2">
             {MOBILE_WALLETS.map((w) => (
               <button
                 key={w.id}
                 onClick={() => openWalletDeepLink(w)}
-                className="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-3 text-left transition hover:border-accent-500/40 hover:bg-white/[0.06] active:scale-[0.98]"
+                className="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-3.5 py-3 text-left transition active:scale-[0.98] hover:border-accent-500/40 hover:bg-white/[0.06]"
               >
                 <img
                   src={w.icon}
                   alt={w.name}
                   className="h-9 w-9 rounded-xl object-contain"
-                  onError={(e) => {
-                    e.currentTarget.style.display = "none";
-                    e.currentTarget.nextSibling.style.display = "flex";
-                  }}
                 />
-                <span
-                  className="hidden h-9 w-9 items-center justify-center rounded-xl bg-accent-500/15 text-accent-400"
-                >
-                  <Wallet className="h-4 w-4" />
+                <span className="flex-1 text-sm font-semibold text-slate-100">
+                  {w.name}
+                </span>
+                <ChevronRight className="h-4 w-4 shrink-0 text-slate-500" />
+              </button>
+            ))}
+
+            {/* Divider */}
+            <div className="flex items-center gap-2 py-1">
+              <div className="h-px flex-1 bg-white/8" />
+              <span className="text-[10px] text-slate-500">or</span>
+              <div className="h-px flex-1 bg-white/8" />
+            </div>
+
+            {/* Other wallets via WalletConnect */}
+            {walletConnectConnector && (
+              <button
+                onClick={() => handleConnect(walletConnectConnector)}
+                disabled={anyPending}
+                className="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-3.5 py-3 text-left transition hover:border-white/20 hover:bg-white/[0.06] disabled:opacity-60"
+              >
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5">
+                  {switching || pendingUid === (walletConnectConnector.uid || walletConnectConnector.id) ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-slate-300" />
+                  ) : (
+                    <QrCode className="h-4 w-4 text-slate-300" />
+                  )}
                 </span>
                 <span className="flex-1">
                   <span className="block text-sm font-semibold text-slate-100">
-                    {w.name}
+                    {switching ? "Switching to BSC..." : "Other Wallets"}
                   </span>
                   <span className="block text-[11px] text-slate-400">
-                    Tap to open app
+                    WalletConnect — scan QR
                   </span>
                 </span>
-                <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+                <ChevronRight className="h-4 w-4 shrink-0 text-slate-500" />
               </button>
-            ))}
+            )}
           </div>
 
-          {/* WalletConnect fallback for mobile too */}
-          {walletConnectConnector && (
-            <button
-              onClick={() => handleConnect(walletConnectConnector)}
-              disabled={anyPending}
-              className="mt-3 flex w-full items-center gap-2.5 rounded-xl border border-accent-500/30 bg-accent-500/10 px-3 py-2.5 text-left transition hover:bg-accent-500/15 disabled:opacity-60"
-            >
-              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-500/20">
-                {switching ? (
-                  <Loader2 className="h-4 w-4 animate-spin text-accent-400" />
-                ) : pendingUid === (walletConnectConnector.uid || walletConnectConnector.id) ? (
-                  <Loader2 className="h-4 w-4 animate-spin text-accent-400" />
-                ) : (
-                  <QrCode className="h-4 w-4 text-accent-400" />
-                )}
-              </span>
-              <span className="flex-1 text-sm font-medium text-slate-100">
-                {switching ? "Switching to BSC..." : "Other wallet (WalletConnect)"}
-              </span>
-              <ChevronRight className="h-4 w-4 text-slate-400" />
-            </button>
-          )}
-
-          {/* Info */}
-          <div className="mt-4 flex items-start gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5">
-            <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
+          {/* Trust note */}
+          <div className="mt-4 flex items-center gap-2 rounded-xl border border-white/8 bg-white/[0.02] px-3 py-2.5">
+            <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
             <p className="text-[11px] leading-snug text-slate-400">
-              You'll be taken to your wallet app to approve the connection. No funds
-              will be moved.
+              Secure connection · No funds moved on connect
             </p>
           </div>
         </div>
