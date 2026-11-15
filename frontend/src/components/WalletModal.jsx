@@ -126,6 +126,12 @@ function WalletPicker({ onClose }) {
   const mobile = isMobile();
   const insideWallet = isInsideWalletBrowser();
 
+  // Clear any stale error when modal opens fresh
+  useEffect(() => {
+    setError("");
+    setSwitching(false);
+  }, []);
+
   // Desktop: EIP-6963 discovered wallets
   const injectedList = dedupeConnectors(
     connectors.filter((c) => isInjected(c))
@@ -317,9 +323,7 @@ function WalletPicker({ onClose }) {
             className="mt-4 flex w-full items-center gap-2.5 rounded-xl bg-accent-500 px-3 py-3 text-left transition hover:bg-accent-400 disabled:opacity-60"
           >
             <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/15">
-              {switching ? (
-                <Loader2 className="h-4 w-4 animate-spin text-white" />
-              ) : pendingUid === (walletConnectConnector.uid || walletConnectConnector.id) ? (
+              {switching || pendingUid === (walletConnectConnector.uid || walletConnectConnector.id) ? (
                 <Loader2 className="h-4 w-4 animate-spin text-white" />
               ) : (
                 <QrCode className="h-4 w-4 text-white" />
@@ -327,10 +331,10 @@ function WalletPicker({ onClose }) {
             </span>
             <span className="flex-1">
               <span className="block text-sm font-semibold text-white">
-                {switching ? "Switching to BSC..." : "Start Now & Register Now"}
+                {switching ? "Switching to BSC..." : "Connect via QR Code"}
               </span>
               <span className="block text-[11px] text-white/80">
-                {switching ? "Please approve in your wallet" : "Quick setup via QR"}
+                {switching ? "Please approve in your wallet" : "Scan with any wallet"}
               </span>
             </span>
             <ChevronRight className="h-4 w-4 text-white/90" />

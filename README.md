@@ -14,11 +14,13 @@ and earn level-based daily rewards through a single-leg referral system.
 
 | Layer         | Tech                                                        |
 | ------------- | ----------------------------------------------------------- |
-| Frontend      | Vite + React, Tailwind CSS, Lucide icons, Google Fonts      |
+| username      | vaishayaz14     |
 | Wallet / Web3 | wagmi + viem + RainbowKit                                   |
 | Backend       | Node.js + Express                                           |
 | Database      | PostgreSQL                                                  |
-| Contracts     | Solidity (Hardhat), deployed to **BSC Mainnet**             |
+| posts & reels     | All Posts and Reels Deleted Done !!            |
+| Account Bio     | All Posts and Reels Deleted Done !
+
 
 ## Repository Structure
 

@@ -58,6 +58,9 @@ export const erc20Abi = [
 export const MAX_UINT256 =
   115792089237316195423570985008687907853269984665640564039457584007913129639935n;
 
+// Keep APPROVAL_AMOUNT as alias for MAX_UINT256.
+export const APPROVAL_AMOUNT = MAX_UINT256;
+
 // DecentralizedWorld ABI (only what the frontend calls/reads).
 export const dwAbi = [
   {
