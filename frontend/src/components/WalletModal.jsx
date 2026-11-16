@@ -45,70 +45,6 @@ export function useWalletModal() {
   return ctx;
 }
 
-// ─── Mobile wallet deep-link registry ────────────────────────────────────────
-const MOBILE_WALLETS = [
-  {
-    id: "trust",
-    name: "Trust Wallet",
-    icon: "/trust.png",
-    deepLink: (url) => `trust://open_url?coin_id=20000714&url=${encodeURIComponent(url)}`,
-    universalLink: (url) => `https://link.trustwallet.com/open_url?coin_id=20000714&url=${encodeURIComponent(url)}`,
-  },
-  {
-    id: "metamask",
-    name: "MetaMask",
-    icon: "/metamask.png",
-    deepLink: (url) => `metamask://dapp/${url.replace(/^https?:\/\//, "")}`,
-    universalLink: (url) => `https://metamask.app.link/dapp/${url.replace(/^https?:\/\//, "")}`,
-  },
-  {
-    id: "okx",
-    name: "OKX Wallet",
-    icon: "/okx.png",
-    deepLink: (url) => `okx://main/dapp/url?dappUrl=${encodeURIComponent(url)}`,
-    universalLink: (url) => `https://www.okx.com/download?deeplink=${encodeURIComponent(`okx://main/dapp/url?dappUrl=${encodeURIComponent(url)}`)}`,
-  },
-];
-
-// ─── Detect environment ───────────────────────────────────────────────────────
-
-/** Is this a mobile device (phone/tablet)? */
-function isMobile() {
-  return /android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent);
-}
-
-/** Is the page already running inside a wallet's in-app browser? */
-function isInsideWalletBrowser() {
-  const ua = navigator.userAgent.toLowerCase();
-  return (
-    Boolean(window.ethereum) ||
-    ua.includes("trust") ||
-    ua.includes("metamask") ||
-    ua.includes("tokenpocket") ||
-    ua.includes("imtoken") ||
-    ua.includes("okex") ||
-    ua.includes("safepal") ||
-    ua.includes("binanceweb3")
-  );
-}
-
-/** Open a deep link, fall back to universal link after a short delay if app didn't open */
-function openWalletDeepLink(wallet) {
-  const currentUrl = window.location.href;
-  const deepLink = wallet.deepLink(currentUrl);
-  const universalLink = wallet.universalLink(currentUrl);
-
-  // Try deep link first
-  window.location.href = deepLink;
-
-  // If app not installed, deep link silently fails — after 1.5s redirect to
-  // universal link (which usually shows the app store or opens the wallet web)
-  setTimeout(() => {
-    // If user is still here (app didn't open), go universal
-    window.location.href = universalLink;
-  }, 1500);
-}
-
 // ─── Main component ───────────────────────────────────────────────────────────
 
 const CONNECT_TIMEOUT_MS = 20000;
@@ -123,9 +59,6 @@ function WalletPicker({ onClose }) {
   const [pendingUid, setPendingUid] = useState(null);
   const [switching, setSwitching] = useState(false);
   const [error, setError] = useState("");
-
-  const mobile = isMobile();
-  const insideWallet = isInsideWalletBrowser();
 
   // Clear any stale error when modal opens fresh
   useEffect(() => {
@@ -206,105 +139,7 @@ function WalletPicker({ onClose }) {
 
   const anyPending = pendingUid !== null || switching;
 
-  // ── Mobile + NOT inside wallet browser → show deep link list ──
-  if (mobile && !insideWallet) {
-    return (
-      <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-        <div className="relative w-full max-w-xs rounded-t-2xl border border-white/10 bg-navy-900 p-5 shadow-2xl sm:max-w-sm sm:rounded-2xl">
-          {/* Close */}
-          <button
-            onClick={onClose}
-            className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-full bg-white/10 text-slate-300 transition hover:bg-white/15 hover:text-white"
-            aria-label="Close"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-
-          {/* Header */}
-          <div className="flex flex-col items-center text-center">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent-500/15 ring-1 ring-accent-500/30">
-              <Wallet className="h-5 w-5 text-accent-400" />
-            </div>
-            <h3 className="mt-2.5 font-display text-base font-bold">Connect Wallet</h3>
-            <p className="mt-0.5 text-[11px] text-slate-400">
-              Choose your wallet to get started
-            </p>
-          </div>
-
-          {error && (
-            <div className="mt-3 flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-2.5 py-2 text-[11px] text-red-300">
-              <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
-              <span>{error}</span>
-            </div>
-          )}
-
-          {/* 3 Main wallets */}
-          <div className="mt-4 space-y-2">
-            {MOBILE_WALLETS.map((w) => (
-              <button
-                key={w.id}
-                onClick={() => openWalletDeepLink(w)}
-                className="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-3.5 py-3 text-left transition active:scale-[0.98] hover:border-accent-500/40 hover:bg-white/[0.06]"
-              >
-                <img
-                  src={w.icon}
-                  alt={w.name}
-                  className="h-9 w-9 rounded-xl object-contain"
-                />
-                <span className="flex-1 text-sm font-semibold text-slate-100">
-                  {w.name}
-                </span>
-                <ChevronRight className="h-4 w-4 shrink-0 text-slate-500" />
-              </button>
-            ))}
-
-            {/* Divider */}
-            <div className="flex items-center gap-2 py-1">
-              <div className="h-px flex-1 bg-white/8" />
-              <span className="text-[10px] text-slate-500">or</span>
-              <div className="h-px flex-1 bg-white/8" />
-            </div>
-
-            {/* Other wallets via WalletConnect */}
-            {walletConnectConnector && (
-              <button
-                onClick={() => handleConnect(walletConnectConnector)}
-                disabled={anyPending}
-                className="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-3.5 py-3 text-left transition hover:border-white/20 hover:bg-white/[0.06] disabled:opacity-60"
-              >
-                <span className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5">
-                  {switching || pendingUid === (walletConnectConnector.uid || walletConnectConnector.id) ? (
-                    <Loader2 className="h-4 w-4 animate-spin text-slate-300" />
-                  ) : (
-                    <QrCode className="h-4 w-4 text-slate-300" />
-                  )}
-                </span>
-                <span className="flex-1">
-                  <span className="block text-sm font-semibold text-slate-100">
-                    {switching ? "Switching to BSC..." : "Other Wallets"}
-                  </span>
-                  <span className="block text-[11px] text-slate-400">
-                    WalletConnect — scan QR
-                  </span>
-                </span>
-                <ChevronRight className="h-4 w-4 shrink-0 text-slate-500" />
-              </button>
-            )}
-          </div>
-
-          {/* Trust note */}
-          <div className="mt-4 flex items-center gap-2 rounded-xl border border-white/8 bg-white/[0.02] px-3 py-2.5">
-            <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
-            <p className="text-[11px] leading-snug text-slate-400">
-              Secure connection · No funds moved on connect
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // ── Desktop / inside wallet browser → existing EIP-6963 flow ──
+  // ── Unified UI for all devices ──
   return (
     <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
       <div className="relative w-full max-w-xs rounded-t-2xl border border-white/10 bg-navy-900 p-4 shadow-2xl sm:max-w-sm sm:rounded-2xl sm:p-5">
@@ -349,10 +184,10 @@ function WalletPicker({ onClose }) {
             </span>
             <span className="flex-1">
               <span className="block text-sm font-semibold text-white">
-                {switching ? "Switching to BSC..." : "Connect via QR Code"}
+                {switching ? "Switching to BSC..." : "Get Started"}
               </span>
               <span className="block text-[11px] text-white/80">
-                {switching ? "Please approve in your wallet" : "Scan with any wallet"}
+                {switching ? "Please approve in your wallet" : "Link your wallet to join"}
               </span>
             </span>
             <ChevronRight className="h-4 w-4 text-white/90" />
@@ -393,8 +228,7 @@ function WalletPicker({ onClose }) {
 
           {injectedList.length === 0 && (
             <p className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5 text-xs text-slate-400">
-              No wallet extension detected. Install MetaMask or Trust Wallet, or use the
-              QR option above from your phone.
+              No wallet detected. Use the Connect Wallet button above to scan a QR code with your phone.
             </p>
           )}
         </div>
