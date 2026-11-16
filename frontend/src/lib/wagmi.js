@@ -1,21 +1,6 @@
 import { createConfig, http } from "wagmi";
-import { bsc as bscBase } from "wagmi/chains";
+import { bsc } from "wagmi/chains";
 import { walletConnect, coinbaseWallet } from "wagmi/connectors";
-
-// Extend the built-in BSC chain definition with full RPC + block-explorer metadata.
-// When the wallet doesn't have BSC pre-added, wagmi uses this to call
-// wallet_addEthereumChain automatically instead of just failing with a 4902 error.
-const bsc = {
-  ...bscBase,
-  rpcUrls: {
-    default: { http: ["https://bsc-dataseed.binance.org/"] },
-    public:  { http: ["https://bsc-dataseed.binance.org/"] },
-  },
-  blockExplorers: {
-    default: { name: "BscScan", url: "https://bscscan.com" },
-  },
-  nativeCurrency: { name: "BNB", symbol: "BNB", decimals: 18 },
-};
 
 const projectId = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID || "";
 const hasWalletConnect = Boolean(projectId) && projectId !== "demo_project_id";

@@ -19,17 +19,6 @@ import {
   Network,
 } from "lucide-react";
 
-const BSC_CHAIN_ID = bsc.id; // 56
-
-// Full BSC chain params — used for wallet_addEthereumChain when chain not in wallet yet.
-const BSC_ADD_PARAMS = {
-  chainId: "0x38", // 56
-  chainName: "BNB Smart Chain",
-  nativeCurrency: { name: "BNB", symbol: "BNB", decimals: 18 },
-  rpcUrls: ["https://bsc-dataseed.binance.org/"],
-  blockExplorerUrls: ["https://bscscan.com"],
-};
-
 const WalletModalContext = createContext(null);
 
 export function WalletModalProvider({ children }) {
@@ -123,6 +112,7 @@ function openWalletDeepLink(wallet) {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 const CONNECT_TIMEOUT_MS = 20000;
+const BSC_CHAIN_ID = bsc.id; // 56
 
 function WalletPicker({ onClose }) {
   const { connectors, connectAsync } = useConnect();
@@ -176,15 +166,31 @@ function WalletPicker({ onClose }) {
 
       if (needsSwitch) {
         setSwitching(true);
-        const switched = await forceSwitchToBSC(connector, switchChainAsync);
-        setSwitching(false);
-        if (!switched) {
-          setError(
-            "Could not switch to BNB Smart Chain. Please manually switch to BSC (Chain ID 56) in your wallet and try again."
-          );
-          setPendingUid(null);
-          return;
+        try {
+          await switchChainAsync({ chainId: BSC_CHAIN_ID });
+        } catch (switchErr) {
+          // Some wallets (e.g. MetaMask mobile) throw even on success —
+          // re-read the chain to confirm before giving up.
+          let chainAfterAttempt = null;
+          try {
+            const provider = await connector.getProvider?.();
+            if (provider?.request) {
+              const hex = await provider.request({ method: "eth_chainId" });
+              chainAfterAttempt = parseInt(hex, 16);
+            }
+          } catch { /* ignore */ }
+
+          if (chainAfterAttempt !== BSC_CHAIN_ID) {
+            setError(
+              "Could not auto-switch to BNB Smart Chain. Please open your wallet, switch the network to BSC (Chain ID 56) manually, then try again."
+            );
+            setSwitching(false);
+            setPendingUid(null);
+            return;
+          }
+          // Switch actually succeeded despite the thrown error — continue.
         }
+        setSwitching(false);
       }
 
       onClose();
@@ -410,24 +416,14 @@ function WalletPicker({ onClose }) {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 async function connectWithFallback(connector, connectAsync) {
-  // Always request BSC (56) directly at connect time.
-  // WalletConnect picks this up and shows the right network in the wallet prompt.
-  // Injected wallets that support it will also land on BSC immediately.
   try {
-    await withTimeout(
-      connectAsync({ connector, chainId: BSC_CHAIN_ID }),
-      CONNECT_TIMEOUT_MS
-    );
+    await withTimeout(connectAsync({ connector }), CONNECT_TIMEOUT_MS);
     return;
   } catch (firstErr) {
     const raw = (firstErr?.shortMessage || firstErr?.message || "").toLowerCase();
     const userRejected =
       raw.includes("reject") || raw.includes("denied") || raw.includes("cancel");
-    if (userRejected) throw firstErr;
-
-    // Some injected wallets ignore chainId in connectAsync — retry without it,
-    // then switch chain in the caller.
-    if (!isInjected(connector)) throw firstErr;
+    if (userRejected || !isInjected(connector)) throw firstErr;
 
     const provider = await safeGetProvider(connector);
     if (!provider?.request) throw firstErr;
@@ -496,101 +492,6 @@ function readableError(e, connector) {
   if (raw.includes("chain") || raw.includes("network"))
     return `Please switch ${name} to BNB Smart Chain and try again.`;
   return e?.shortMessage || e?.message || `Couldn't connect ${name}. Please try again.`;
-}
-
-// ─── forceSwitchToBSC ─────────────────────────────────────────────────────────
-// Works on ALL environments: Trust Wallet in-app browser, MetaMask, injected,
-// WalletConnect. Strategy:
-//  1. Try window.ethereum directly (fastest, works in all in-app browsers).
-//  2. If 4902 (chain not added), call wallet_addEthereumChain first, then switch.
-//  3. Fall back to wagmi switchChainAsync.
-//  4. Verify by re-reading eth_chainId — some wallets throw even on success.
-async function forceSwitchToBSC(connector, switchChainAsync) {
-  // Get the best available provider — prefer window.ethereum (in-app browsers
-  // inject it directly and it's the only thing that works there).
-  async function getProvider() {
-    if (window.ethereum?.request) return window.ethereum;
-    try {
-      const p = await connector.getProvider?.();
-      if (p?.request) return p;
-    } catch { /* ignore */ }
-    return null;
-  }
-
-  async function readChain(provider) {
-    try {
-      const hex = await provider.request({ method: "eth_chainId" });
-      return parseInt(hex, 16);
-    } catch { return null; }
-  }
-
-  async function addAndSwitch(provider) {
-    // Add BSC to wallet, then switch to it.
-    try {
-      await provider.request({
-        method: "wallet_addEthereumChain",
-        params: [BSC_ADD_PARAMS],
-      });
-      const chain = await readChain(provider);
-      return !chain || chain === BSC_CHAIN_ID;
-    } catch { return false; }
-  }
-
-  async function switchViaProvider(provider) {
-    const current = await readChain(provider);
-    if (current === BSC_CHAIN_ID) return true;
-
-    try {
-      await provider.request({
-        method: "wallet_switchEthereumChain",
-        params: [{ chainId: "0x38" }],
-      });
-      const after = await readChain(provider);
-      return !after || after === BSC_CHAIN_ID;
-    } catch (err) {
-      const code = err?.code ?? err?.data?.originalError?.code;
-      const msg = (err?.message || "").toLowerCase();
-      // 4902 = chain not found in wallet → add it
-      const needsAdd =
-        code === 4902 ||
-        msg.includes("4902") ||
-        msg.includes("unrecognized chain") ||
-        msg.includes("try adding");
-
-      if (needsAdd) return addAndSwitch(provider);
-
-      // Some wallets throw on success — verify before giving up
-      const afterErr = await readChain(provider);
-      return afterErr === BSC_CHAIN_ID;
-    }
-  }
-
-  // ── Step 1: try via window.ethereum / connector provider directly ──
-  const provider = await getProvider();
-  if (provider) {
-    const ok = await switchViaProvider(provider);
-    if (ok) return true;
-  }
-
-  // ── Step 2: fall back to wagmi switchChainAsync ──
-  try {
-    await switchChainAsync({ chainId: BSC_CHAIN_ID });
-    // Verify after wagmi switch
-    const p2 = await getProvider();
-    if (p2) {
-      const chain = await readChain(p2);
-      return !chain || chain === BSC_CHAIN_ID;
-    }
-    return true;
-  } catch {
-    // Last resort: re-read chain
-    const p3 = await getProvider();
-    if (p3) {
-      const chain = await readChain(p3);
-      return chain === BSC_CHAIN_ID;
-    }
-    return false;
-  }
 }
 
 function dedupeConnectors(connectors) {
