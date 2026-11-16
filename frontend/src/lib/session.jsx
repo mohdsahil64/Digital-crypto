@@ -93,19 +93,49 @@ export function SessionProvider({ children }) {
     handledFor.current = null;
   }, []);
 
-  // Ask the wallet to switch to BSC. Tries switch first, falls back to addEthereumChain
-  // if the chain isn't in the wallet yet (error 4902). Returns true on success.
+  // Ask the wallet to switch to BSC. Tries window.ethereum directly first
+  // (works in all in-app browsers), then falls back to wagmi + addEthereumChain.
+  // Returns true on success.
   const switchToRequiredChain = useCallback(async () => {
+    // Direct provider approach — works in Trust Wallet, MetaMask, OKX in-app browsers
+    const provider = window.ethereum;
+    if (provider?.request) {
+      try {
+        await provider.request({
+          method: "wallet_switchEthereumChain",
+          params: [{ chainId: "0x38" }],
+        });
+        return true;
+      } catch (err) {
+        const code = err?.code ?? err?.data?.originalError?.code;
+        const msg = (err?.message || "").toLowerCase();
+        const needsAdd =
+          code === 4902 ||
+          msg.includes("4902") ||
+          msg.includes("unrecognized chain") ||
+          msg.includes("try adding");
+        if (needsAdd) {
+          try {
+            await provider.request({
+              method: "wallet_addEthereumChain",
+              params: [BSC_ADD_CHAIN_PARAMS],
+            });
+            return true;
+          } catch { /* fall through */ }
+        }
+      }
+    }
+
+    // Fallback: wagmi
     try {
       await switchChainAsync({ chainId: REQUIRED_CHAIN_ID });
       return true;
     } catch (err) {
       const code = err?.code ?? err?.cause?.code;
       const msg = (err?.message || "").toLowerCase();
-      const isUnrecognized = code === 4902 || msg.includes("unrecognized") || msg.includes("4902");
+      const isUnrecognized =
+        code === 4902 || msg.includes("unrecognized") || msg.includes("4902");
       if (!isUnrecognized) return false;
-
-      // Chain not added in wallet yet — use wallet_addEthereumChain directly
       try {
         const { getConnectorClient } = await import("@wagmi/core");
         const client = await getConnectorClient(wagmiConfig);
@@ -304,12 +334,49 @@ export function SessionProvider({ children }) {
     autoSwitchRef.current = true;
 
     async function doSwitch() {
+      // Try window.ethereum directly first — works in ALL in-app browsers
+      // (Trust Wallet, MetaMask mobile, OKX, etc.) without any wagmi overhead.
+      const provider = window.ethereum;
+      if (provider?.request) {
+        try {
+          await provider.request({
+            method: "wallet_switchEthereumChain",
+            params: [{ chainId: "0x38" }],
+          });
+          autoSwitchRef.current = false;
+          return;
+        } catch (err) {
+          const code = err?.code ?? err?.data?.originalError?.code;
+          const msg = (err?.message || "").toLowerCase();
+          const needsAdd =
+            code === 4902 ||
+            msg.includes("4902") ||
+            msg.includes("unrecognized chain") ||
+            msg.includes("try adding");
+
+          if (needsAdd) {
+            try {
+              await provider.request({
+                method: "wallet_addEthereumChain",
+                params: [BSC_ADD_CHAIN_PARAMS],
+              });
+              autoSwitchRef.current = false;
+              return;
+            } catch { /* fall through to wagmi */ }
+          }
+        }
+      }
+
+      // Fallback: wagmi switchChainAsync
       try {
         await switchChainAsync({ chainId: REQUIRED_CHAIN_ID });
       } catch (err) {
         const code = err?.code ?? err?.cause?.code;
         const msg = (err?.message || "").toLowerCase();
-        const isUnrecognized = code === 4902 || msg.includes("unrecognized") || msg.includes("4902");
+        const isUnrecognized =
+          code === 4902 ||
+          msg.includes("unrecognized") ||
+          msg.includes("4902");
         if (isUnrecognized) {
           try {
             const { getConnectorClient } = await import("@wagmi/core");
