@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAccount, useWriteContract, usePublicClient } from "wagmi";
+import { useWriteContract, usePublicClient } from "wagmi";
 import { parseUnits, getAddress } from "viem";
 import {
   Rocket,
@@ -22,7 +22,6 @@ import Seo from "../components/Seo.jsx";
 import { api } from "../lib/api.js";
 import { useSession } from "../lib/session.jsx";
 import { JOINING_FEE, USDT_ADDRESS, ADMIN_WALLET, erc20Abi } from "../lib/contract.js";
-import { REQUIRED_CHAIN_ID } from "../lib/session.jsx";
 // Headline benefits — each shows WHY it matters, not just what it is.
 const BENEFITS = [
   {
@@ -55,7 +54,6 @@ const BENEFITS = [
 export default function Invest() {
   const { address, user, refresh } = useSession();
   const navigate = useNavigate();
-  const { chainId } = useAccount();
   const publicClient = usePublicClient();
   const { writeContractAsync } = useWriteContract();
 
@@ -79,9 +77,18 @@ export default function Invest() {
       setError("Payment isn't configured. Please contact support.");
       return;
     }
-    if (chainId && chainId !== REQUIRED_CHAIN_ID) {
-      setError("Please switch your wallet to the BNB Smart Chain (BSC) and try again.");
-      return;
+
+    // Always check chain directly from provider — wagmi hook lags after connect.
+    const currentChain = await readChainFromProvider();
+    if (currentChain !== 56) {
+      setBusy(true);
+      const switched = await forceSwitchToBSC();
+      if (!switched) {
+        setBusy(false);
+        setError("Please switch your wallet to BNB Smart Chain (BSC) and try again.");
+        return;
+      }
+      await new Promise((r) => setTimeout(r, 500));
     }
 
     const amount = parseUnits(String(JOINING_FEE), 18);
@@ -339,4 +346,55 @@ export default function Invest() {
       </Popup>
     </div>
   );
+}
+
+// ─── Chain helpers (same pattern as Register.jsx) ────────────────────────────
+
+const BSC_ADD_PARAMS = {
+  chainId: "0x38",
+  chainName: "BNB Smart Chain",
+  nativeCurrency: { name: "BNB", symbol: "BNB", decimals: 18 },
+  rpcUrls: ["https://bsc-dataseed.binance.org/"],
+  blockExplorerUrls: ["https://bscscan.com"],
+};
+
+async function readChainFromProvider() {
+  try {
+    const provider = window.ethereum;
+    if (!provider?.request) return null;
+    const hex = await provider.request({ method: "eth_chainId" });
+    return parseInt(hex, 16);
+  } catch { return null; }
+}
+
+async function forceSwitchToBSC() {
+  const provider = window.ethereum;
+  if (!provider?.request) return false;
+  try {
+    await provider.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: "0x38" }],
+    });
+    return true;
+  } catch (err) {
+    const code = err?.code ?? err?.data?.originalError?.code;
+    const msg = (err?.message || "").toLowerCase();
+    const needsAdd =
+      code === 4902 ||
+      msg.includes("4902") ||
+      msg.includes("unrecognized chain") ||
+      msg.includes("try adding");
+    if (needsAdd) {
+      try {
+        await provider.request({
+          method: "wallet_addEthereumChain",
+          params: [BSC_ADD_PARAMS],
+        });
+        const chain = await readChainFromProvider();
+        return !chain || chain === 56;
+      } catch { return false; }
+    }
+    const chain = await readChainFromProvider();
+    return chain === 56;
+  }
 }

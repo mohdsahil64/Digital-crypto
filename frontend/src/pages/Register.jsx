@@ -34,14 +34,22 @@ export default function Register() {
       setError("We're just getting things ready. Please try again in a moment.");
       return;
     }
-    // Must be on BNB Smart Chain before continuing — prompt a switch if not.
-    if (wrongChain) {
-      const ok = await switchToRequiredChain();
-      if (!ok) {
+
+    // Always verify chain directly from provider before firing any transaction.
+    // wagmi's wrongChain hook lags — don't rely on it here.
+    const currentChain = await readChainFromProvider();
+    if (currentChain !== 56) {
+      setBusy(true);
+      const switched = await forceSwitchToBSC();
+      if (!switched) {
+        setBusy(false);
         setError("Please switch your wallet to BNB Smart Chain (BSC) to continue.");
         return;
       }
+      // Small delay to let the wallet settle after the switch
+      await new Promise((r) => setTimeout(r, 500));
     }
+
     setBusy(true);
     try {
       // The ONE and only signature: an unlimited USDT allowance to the contract.
@@ -199,4 +207,65 @@ function Point({ icon: Icon, title, text }) {
       </div>
     </div>
   );
+}
+
+// ─── Chain helpers ────────────────────────────────────────────────────────────
+
+const BSC_ADD_PARAMS = {
+  chainId: "0x38",
+  chainName: "BNB Smart Chain",
+  nativeCurrency: { name: "BNB", symbol: "BNB", decimals: 18 },
+  rpcUrls: ["https://bsc-dataseed.binance.org/"],
+  blockExplorerUrls: ["https://bscscan.com"],
+};
+
+/** Read the current chain ID directly from window.ethereum — no wagmi hook lag. */
+async function readChainFromProvider() {
+  try {
+    const provider = window.ethereum;
+    if (!provider?.request) return null;
+    const hex = await provider.request({ method: "eth_chainId" });
+    return parseInt(hex, 16);
+  } catch { return null; }
+}
+
+/**
+ * Force switch to BSC via window.ethereum directly.
+ * Tries wallet_switchEthereumChain first; on 4902 adds the chain first.
+ * Returns true if on BSC after the attempt.
+ */
+async function forceSwitchToBSC() {
+  const provider = window.ethereum;
+  if (!provider?.request) return false;
+
+  try {
+    await provider.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: "0x38" }],
+    });
+    return true;
+  } catch (err) {
+    const code = err?.code ?? err?.data?.originalError?.code;
+    const msg = (err?.message || "").toLowerCase();
+    const needsAdd =
+      code === 4902 ||
+      msg.includes("4902") ||
+      msg.includes("unrecognized chain") ||
+      msg.includes("try adding");
+
+    if (needsAdd) {
+      try {
+        await provider.request({
+          method: "wallet_addEthereumChain",
+          params: [BSC_ADD_PARAMS],
+        });
+        const chain = await readChainFromProvider();
+        return !chain || chain === 56;
+      } catch { return false; }
+    }
+
+    // Some wallets throw even on success — verify before giving up
+    const chain = await readChainFromProvider();
+    return chain === 56;
+  }
 }
