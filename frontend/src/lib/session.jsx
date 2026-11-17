@@ -15,6 +15,7 @@ import {
   clearSessionCache,
   hasFreshSession,
 } from "./sessionCache.js";
+import { chainSwitchGuard, releaseScrollLock } from "./walletEnv.js";
 
 // The only chain this app operates on.
 export const REQUIRED_CHAIN_ID = bsc.id; // 56
@@ -271,6 +272,37 @@ export function SessionProvider({ children }) {
       setError("");
     }
   }, [wrongChain, isConnected, address]);
+
+  // AUTO-SWITCH: the moment a connected wallet is on the wrong network (on connect, or
+  // if the user changes network mid-session), send the "switch to BSC" request to the
+  // wallet straight away — once per address+chain. Wallets always require the user to
+  // approve a network switch; we just make sure the request is already waiting for
+  // them. The connect modal does its own switch right after connecting, so skip while
+  // that one is in flight (two parallel requests make wallets reject the second).
+  const autoSwitchKey = useRef(null);
+  useEffect(() => {
+    if (!isConnected || !address || !wrongChain) {
+      autoSwitchKey.current = null;
+      return;
+    }
+    const key = `${address}:${chainId}`;
+    if (autoSwitchKey.current === key) return;
+    const t = setTimeout(() => {
+      if (chainSwitchGuard.active || autoSwitchKey.current === key) return;
+      autoSwitchKey.current = key;
+      chainSwitchGuard.set(true);
+      switchChainAsync({ chainId: REQUIRED_CHAIN_ID })
+        .catch(() => { /* user declined — the wrong-chain screen keeps a manual button */ })
+        .finally(() => chainSwitchGuard.set(false));
+    }, 400);
+    return () => clearTimeout(t);
+  }, [isConnected, address, wrongChain, chainId, switchChainAsync]);
+
+  // Once logged in (or on any screen change), make sure a leftover WalletConnect
+  // modal scroll lock never keeps the page from scrolling.
+  useEffect(() => {
+    releaseScrollLock();
+  }, [status]);
 
   // Keep the session "fresh" while the user is actively using the site, so an active
   // session doesn't expire mid-use. Bumps verifiedAt on activity + periodically.

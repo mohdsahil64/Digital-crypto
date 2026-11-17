@@ -385,15 +385,15 @@ function SessionOverlay({
     content = {
       icon: Network,
       tone: "danger",
-      title: "Switch to BNB Smart Chain",
-      text: "This app runs only on BNB Smart Chain (BSC). Switch your wallet's network to continue.",
+      title: "Almost there",
+      text: "We're moving you to BNB Smart Chain. Please confirm to continue.",
       action: (
         <div className="mt-6 flex flex-col gap-2 sm:flex-row">
           <button onClick={switchToRequiredChain} disabled={switchingChain} className="btn-primary">
             {switchingChain ? (
-              <><Loader2 className="h-4 w-4 animate-spin" /> Switching...</>
+              <><Loader2 className="h-4 w-4 animate-spin" /> Please wait...</>
             ) : (
-              <><Network className="h-4 w-4" /> Switch to BSC</>
+              <><Network className="h-4 w-4" /> Continue</>
             )}
           </button>
           <button onClick={logout} className="btn-ghost">
@@ -407,13 +407,13 @@ function SessionOverlay({
       icon: Loader2,
       spin: true,
       title: "Setting things up",
-      text: "Approve the request in your wallet to continue — it's free and moves no funds.",
+      text: "Just a moment, we're getting everything ready for you.",
     };
   } else if (status === "needs-verify") {
     content = {
       icon: ShieldAlert,
       title: "One quick step",
-      text: error || "Approve the request in your wallet to continue.",
+      text: error || "Please confirm to continue.",
       action: (
         <div className="mt-6 flex gap-2">
           <button onClick={retry} className="btn-primary">
