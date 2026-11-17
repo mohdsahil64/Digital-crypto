@@ -11,7 +11,7 @@ import { useEffect } from "react";
  * `title` is suffixed with the brand automatically unless `rawTitle` is passed.
  */
 const BRAND = "Decentralized World";
-const SITE_URL = "https://decentralizeed.site";
+const SITE_URL = "https://decenntralized.sbs";
 const DEFAULT_IMAGE = `${SITE_URL}/og-image.png`;
 
 function setMeta(attr, key, content) {

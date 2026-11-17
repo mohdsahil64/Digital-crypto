@@ -11,4 +11,4 @@ Disallow: /invest
 Disallow: /refer
 Disallow: /team
 
-Sitemap: https://decentralizeed.site/sitemap.xml
+Sitemap: https://decenntralized.sbs/sitemap.xml

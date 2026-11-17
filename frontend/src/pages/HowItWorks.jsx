@@ -90,7 +90,7 @@ const STEPS = [
     bg: "bg-accent-500/10", border: "border-accent-500/20",
     title: "Connect & Register",
     points: [
-      "Open decentralizeed.site in your wallet's built-in browser",
+      "Open decenntralized.sbs in your wallet's built-in browser",
       "Tap 'Join Now' — approve a free signature (no USDT charged)",
       "Enter your referrer's invite code to link with your upline",
     ],

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
 # deploy.sh — One-command deploy for Decentralized World
-# VPS path: /www/wwwroot/decentralizeed.site
+# VPS path: /www/Decentralized_World
 #
 # Usage:
 #   ./deploy.sh          — smart deploy (only rebuilds what changed)
@@ -22,7 +22,7 @@ header()  { echo -e "\n${BOLD}${CYAN}━━━━━━━━━━━━━━�
 fail()    { echo -e "${RED}[FAILED]${RESET} $*"; echo -e "${RED}━━━ Deploy aborted ━━━${RESET}"; exit 1; }
 
 # ── Config ───────────────────────────────────────────────────────────────────
-APP_DIR="/www/wwwroot/decentralizeed.site"
+APP_DIR="/www/Decentralized_World"
 BACKEND_DIR="$APP_DIR/backend"
 FRONTEND_DIR="$APP_DIR/frontend"
 NGINX_PID="/www/server/nginx/logs/nginx.pid"
@@ -210,7 +210,7 @@ fi
 header "Step 5 — Health Check"
 
 info "Testing API..."
-HEALTH=$(curl -sk https://decentralizeed.site/api/health 2>/dev/null || curl -s http://localhost:4000/api/health 2>/dev/null || echo "")
+HEALTH=$(curl -sk https://decenntralized.sbs/api/health 2>/dev/null || curl -s http://localhost:4000/api/health 2>/dev/null || echo "")
 if echo "$HEALTH" | grep -q '"status":"ok"'; then
   success "API health check passed ✓"
 else
@@ -228,4 +228,4 @@ echo -e "  Migration : $( $SCHEMA_CHANGED   && echo "${GREEN}ran${RESET}"       
 echo -e "  Frontend  : $( $FRONTEND_CHANGED && echo "${GREEN}rebuilt${RESET}"   || echo "unchanged")"
 echo -e "  FeDeps    : $( $FRONTEND_DEPS_CHANGED && echo "${GREEN}installed${RESET}" || echo "skipped")"
 echo ""
-echo -e "${GREEN}${BOLD}✅  Deploy complete! — https://decentralizeed.site${RESET}\n"
+echo -e "${GREEN}${BOLD}✅  Deploy complete! — https://decenntralized.sbs${RESET}\n"
