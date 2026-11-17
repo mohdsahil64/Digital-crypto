@@ -20,7 +20,14 @@ const hasWalletConnect = Boolean(projectId) && projectId !== "demo_project_id";
  *  - walletConnect: QR / mobile deep-link for wallets that aren't in the browser
  *    (only when a real WalletConnect project id is configured).
  */
-const connectors = [coinbaseWallet({ appName: "Decentralized World" })];
+// Square PNG logo shown by wallets on connect / transaction popups. Must be an
+// absolute https URL to a PNG/JPG (wallets don't render SVG).
+const SITE_ORIGIN = typeof window !== "undefined" ? window.location.origin : "";
+const APP_ICON = `${SITE_ORIGIN}/icon-512.png`;
+
+const connectors = [
+  coinbaseWallet({ appName: "Decentralized World", appLogoUrl: APP_ICON }),
+];
 
 if (hasWalletConnect) {
   connectors.push(
@@ -30,8 +37,8 @@ if (hasWalletConnect) {
       metadata: {
         name: "Decentralized World",
         description: "Wallet-based on-chain community",
-        url: typeof window !== "undefined" ? window.location.origin : "",
-        icons: [],
+        url: SITE_ORIGIN,
+        icons: [APP_ICON],
       },
     })
   );
