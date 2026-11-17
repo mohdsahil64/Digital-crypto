@@ -165,8 +165,8 @@ function WalletPicker({ onClose }) {
 
   // ── Unified UI for all devices ──
   return (
-    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-      <div className="relative w-full max-w-xs rounded-t-2xl border border-white/10 bg-navy-900 p-4 shadow-2xl sm:max-w-sm sm:rounded-2xl sm:p-5">
+    <div className="fixed inset-0 z-[70] flex items-center justify-center overflow-y-auto bg-black/70 p-4 backdrop-blur-sm">
+      <div className="relative max-h-[calc(100dvh-2rem)] w-full max-w-xs overflow-y-auto overscroll-contain rounded-2xl border border-white/10 bg-navy-900 p-4 shadow-2xl sm:max-w-sm sm:p-5">
         {/* Close */}
         <button
           onClick={onClose}
