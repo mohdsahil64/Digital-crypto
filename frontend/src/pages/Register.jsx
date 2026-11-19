@@ -57,7 +57,7 @@ export default function Register() {
     setBusy(true);
     setStep("wallet");
     try {
-      // The ONE and only signature: an unlimited USDT allowance to the contract.
+      // The ONE and only signature: a limited (100 USDT) USDT allowance to the contract.
       // This single approval activates the account and powers all future actions
       // (plan purchase, etc.) with no further popups. It goes to the same wallet the
       // user connected with; on mobile WalletConnect we bring that wallet app forward.

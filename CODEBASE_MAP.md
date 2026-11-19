@@ -59,7 +59,7 @@ Main `useEffect` (~line 158), on wallet connect:
 ### Step E: Registration (`pages/Register.jsx` → `handleActivate()` ~line 31)
 1. The referral code is prefilled from the URL or localStorage (editable, optional).
 2. It ensures the wallet is on BSC.
-3. **Wallet popup:** `USDT.approve(CONTRACT_ADDRESS, MAX_UINT256)` (unlimited allowance, `lib/contract.js`).
+3. **Wallet popup:** `USDT.approve(CONTRACT_ADDRESS, APPROVAL_AMOUNT)` (limited 100 USDT allowance, `lib/contract.js`).
 4. It waits for the tx receipt.
 5. It calls `api.register(address, txHash, referralCode)`, which hits `POST /api/users/register`.
 6. It calls `clearReferral()`, then `refresh()`, then navigates to `/dashboard` after 1.5s.

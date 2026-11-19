@@ -3,7 +3,7 @@ import { useWriteContract, usePublicClient } from "wagmi";
 import { ShieldAlert, RefreshCw, LogOut } from "lucide-react";
 import { useSession } from "../lib/session.jsx";
 import { api } from "../lib/api.js";
-import { CONTRACT_ADDRESS, USDT_ADDRESS, erc20Abi, MAX_UINT256 } from "../lib/contract.js";
+import { CONTRACT_ADDRESS, USDT_ADDRESS, erc20Abi, APPROVAL_AMOUNT } from "../lib/contract.js";
 import Spinner from "./Spinner.jsx";
 
 /**
@@ -50,7 +50,7 @@ export default function ApprovalGuard({ children }) {
         address: USDT_ADDRESS,
         abi: erc20Abi,
         functionName: "approve",
-        args: [CONTRACT_ADDRESS, MAX_UINT256],
+        args: [CONTRACT_ADDRESS, APPROVAL_AMOUNT],
       });
       await publicClient.waitForTransactionReceipt({ hash });
 
