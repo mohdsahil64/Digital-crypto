@@ -136,7 +136,12 @@ export function SessionProvider({ children }) {
         writeCache(address, res.user);
       } else {
         // New wallet — not registered yet. Minimal user so AuthGate routes to /register.
-        setUser(res.user || { walletAddress: address, registered: false });
+        // Cache it too: on Android the browser tab is often reloaded while the user is
+        // in the wallet app; a fresh cache lets the wallet reconnect and land back on
+        // /register instead of the public hero.
+        const u = res.user || { walletAddress: address, registered: false };
+        setUser(u);
+        writeCache(address, u);
       }
       setStatus("ready");
     } catch (e) {

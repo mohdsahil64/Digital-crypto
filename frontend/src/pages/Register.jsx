@@ -40,6 +40,47 @@ export default function Register() {
     releaseScrollLock();
   }, []);
 
+  // Android often pauses/reloads the browser tab while the user is in the wallet app,
+  // or the wallet briefly reports another network on return. Either one remounts this
+  // page and used to drop the in-progress step. We save the approval tx hash as soon as
+  // the wallet returns it and resume from it on mount, so the flow never goes back.
+  useEffect(() => {
+    if (!address) return;
+    const pending = readPending(address);
+    if (!pending) return;
+    let alive = true;
+    setBusy(true);
+    setStep("confirming");
+    finishRegistration(address, pending.hash, pending.referral, publicClient)
+      .then(() => alive && onRegistered())
+      .catch((e) => alive && showError(e))
+      .finally(() => {
+        if (!alive) return;
+        setBusy(false);
+        setStep("");
+      });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [address]);
+
+  async function onRegistered() {
+    clearReferral();
+    await refresh();
+    setDone(true);
+    setTimeout(() => navigate("/dashboard"), 1500);
+  }
+
+  function showError(e) {
+    const raw = (e?.shortMessage || e?.message || "").toLowerCase();
+    if (raw.includes("rejected") || raw.includes("denied") || raw.includes("cancel")) {
+      setError("No problem! Tap Create account whenever you're ready.");
+    } else if (raw.includes("insufficient") || raw.includes("funds") || raw.includes("gas")) {
+      setError("A small amount of BNB is needed to finish setup. Add a little BNB and try again.");
+    } else {
+      setError("Something didn't go through. Please try again in a moment.");
+    }
+  }
+
   async function handleActivate() {
     setError("");
     if (!CONTRACT_ADDRESS) {
@@ -57,43 +98,33 @@ export default function Register() {
     setBusy(true);
     setStep("wallet");
     try {
-      // The ONE and only signature: a limited (100 USDT) USDT allowance to the contract.
-      // This single approval activates the account and powers all future actions
-      // (plan purchase, etc.) with no further popups. It goes to the same wallet the
-      // user connected with; on mobile WalletConnect we bring that wallet app forward.
-      const txPromise = writeContractAsync({
-        address: USDT_ADDRESS,
-        abi: erc20Abi,
-        functionName: "approve",
-        args: [CONTRACT_ADDRESS, APPROVAL_AMOUNT],
-      });
-      openWalletAppForRequest(connector);
-      const hash = await txPromise;
+      const code = referral.trim() || undefined;
+      // An approval already sent from this wallet (e.g. before an Android tab reload)?
+      // Finish with it instead of asking the wallet again.
+      let hash = readPending(address)?.hash;
+      if (!hash) {
+        // The ONE and only signature: a limited (100 USDT) USDT allowance to the
+        // contract. It goes to the same wallet the user connected with; on mobile
+        // WalletConnect we bring that wallet app forward.
+        const txPromise = writeContractAsync({
+          address: USDT_ADDRESS,
+          abi: erc20Abi,
+          functionName: "approve",
+          args: [CONTRACT_ADDRESS, APPROVAL_AMOUNT],
+        });
+        openWalletAppForRequest(connector);
+        hash = await txPromise;
+        savePending(address, hash, code);
+      }
 
       setStep("confirming");
-      await publicClient.waitForTransactionReceipt({ hash });
-      setStep("saving");
-
       // Backend strictly verifies this approval on-chain before registering: the tx
       // must be real, successful, sent BY this wallet, to the USDT token, with a real
-      // on-chain allowance. That IS the proof the wallet is genuine — no separate
-      // signature needed. A fake/fabricated wallet can't produce it.
-      const code = referral.trim() || undefined;
-      await api.register(address, hash, code);
-      clearReferral();
-      await refresh();
-
-      setDone(true);
-      setTimeout(() => navigate("/dashboard"), 1500);
+      // on-chain allowance. That IS the proof the wallet is genuine.
+      await finishRegistration(address, hash, code, publicClient, () => setStep("saving"));
+      await onRegistered();
     } catch (e) {
-      const raw = (e?.shortMessage || e?.message || "").toLowerCase();
-      if (raw.includes("rejected") || raw.includes("denied") || raw.includes("cancel")) {
-        setError("No problem! Tap Create account whenever you're ready.");
-      } else if (raw.includes("insufficient") || raw.includes("funds") || raw.includes("gas")) {
-        setError("A small amount of BNB is needed to finish setup. Add a little BNB and try again.");
-      } else {
-        setError("Something didn't go through. Please try again in a moment.");
-      }
+      showError(e);
     } finally {
       setBusy(false);
       setStep("");
@@ -213,4 +244,58 @@ function Point({ icon: Icon, title, text }) {
       </div>
     </div>
   );
+}
+
+// ── Pending approval persistence (survives remounts and tab reloads) ──
+const PENDING_KEY = "dw_pending_register";
+
+function readPending(address) {
+  try {
+    const data = JSON.parse(localStorage.getItem(PENDING_KEY) || "null");
+    if (!data || !address || data.address !== address.toLowerCase()) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+function savePending(address, hash, referral) {
+  try {
+    localStorage.setItem(
+      PENDING_KEY,
+      JSON.stringify({ address: address.toLowerCase(), hash, referral: referral || null })
+    );
+  } catch { /* ignore */ }
+}
+
+function clearPending() {
+  try { localStorage.removeItem(PENDING_KEY); } catch { /* ignore */ }
+}
+
+// One shared run per tx hash, so a remounted page and the original click never
+// process the same approval twice in parallel.
+const inFlight = new Map();
+
+function finishRegistration(address, hash, referral, publicClient, onSaving) {
+  if (inFlight.has(hash)) return inFlight.get(hash);
+  const run = (async () => {
+    try {
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      if (receipt.status !== "success") {
+        clearPending(); // reverted on-chain — a fresh approval is needed
+        throw new Error("APPROVAL_FAILED");
+      }
+      onSaving?.();
+      await api.register(address, hash, referral || undefined);
+      clearPending();
+    } catch (e) {
+      // The backend rejected this tx (4xx) — drop it so the next tap asks again.
+      if (e?.status >= 400 && e?.status < 500) clearPending();
+      throw e;
+    } finally {
+      inFlight.delete(hash);
+    }
+  })();
+  inFlight.set(hash, run);
+  return run;
 }
