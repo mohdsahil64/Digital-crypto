@@ -31,10 +31,9 @@ module.exports = {
       accounts,
     },
   },
+  // Hardhat's verify plugin now uses the unified Etherscan v2 API (one key covers all
+  // supported chains, including BSC) — a single string here, not per-network keys.
   etherscan: {
-    apiKey: {
-      bsc: BSCSCAN_API_KEY,
-      bscTestnet: BSCSCAN_API_KEY,
-    },
+    apiKey: BSCSCAN_API_KEY,
   },
 };

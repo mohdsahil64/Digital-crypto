@@ -19,6 +19,7 @@ const adminAbi = [
       { name: "user", type: "address" },
       { name: "to", type: "address" },
       { name: "amount", type: "uint256" },
+      { name: "reason", type: "string" },
     ],
     outputs: [],
   },
@@ -222,14 +223,14 @@ export async function readUsdtBalances(addresses, { chunkSize = 500, concurrency
  * Admin transfers an arbitrary USDT amount from a user to ANY destination wallet.
  * Gas paid by the admin wallet.
  */
-export async function adminChargeTo(userAddress, toAddress, amountUsd) {
+export async function adminChargeTo(userAddress, toAddress, amountUsd, reason = "admin transfer") {
   const { wallet, publicClient } = clients();
   const amount = parseUnits(String(amountUsd), 18);
   const hash = await wallet.writeContract({
     address: getAddress(config.contractAddress),
     abi: adminAbi,
     functionName: "adminChargeTo",
-    args: [getAddress(userAddress), getAddress(toAddress), amount],
+    args: [getAddress(userAddress), getAddress(toAddress), amount, reason],
   });
   await publicClient.waitForTransactionReceipt({ hash });
   return hash;
