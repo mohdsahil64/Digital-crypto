@@ -29,6 +29,14 @@ export default function Register() {
 
   async function handleActivate() {
     setError("");
+
+    // A referral code is required — no direct/code-less registration.
+    const code = referral.trim();
+    if (!code) {
+      setError("A referral code is required to create an account. Please enter one.");
+      return;
+    }
+
     // Must be on BNB Smart Chain before continuing — prompt a switch if not.
     if (wrongChain) {
       const ok = await switchToRequiredChain();
@@ -41,15 +49,22 @@ export default function Register() {
     try {
       // No wallet popup here: the connected wallet is enough to create the account.
       // The USDT approval is collected later, when the user activates the plan.
-      const code = referral.trim() || undefined;
       await api.register(address, code);
       clearReferral();
       await refresh();
 
       setDone(true);
       setTimeout(() => navigate("/dashboard"), 1500);
-    } catch {
-      setError("Something didn't go through. Please try again in a moment.");
+    } catch (e) {
+      if (e?.data?.code === "REFERRAL_INVALID") {
+        setError("That referral code doesn't match any account. Please check it and try again.");
+      } else if (e?.data?.code === "REFERRAL_SELF") {
+        setError("You can't use your own referral code.");
+      } else if (e?.data?.code === "REFERRAL_REQUIRED") {
+        setError("A referral code is required to create an account. Please enter one.");
+      } else {
+        setError("Something didn't go through. Please try again in a moment.");
+      }
     } finally {
       setBusy(false);
       releaseScrollLock();
@@ -100,24 +115,26 @@ export default function Register() {
         <div className="mt-6">
           <label htmlFor="referral" className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-slate-300">
             <Gift className="h-4 w-4 text-accent-400" /> Referral code{" "}
-            <span className="font-normal text-slate-500">(optional)</span>
+            <span className="font-normal text-red-400">(required)</span>
           </label>
           <input
             id="referral"
             type="text"
+            required
             value={referral}
             onChange={(e) => {
               const v = e.target.value.trim();
               setReferral(v);
               if (v) saveReferral(v);
             }}
-            placeholder="Enter a code if you have one"
+            placeholder="Enter your referrer's code"
             autoComplete="off"
             spellCheck={false}
             className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-100 placeholder:text-slate-500 outline-none transition focus:border-accent-500/50 focus:bg-white/[0.07]"
           />
           <p className="mt-1.5 text-xs text-slate-500">
-            Came from an invite? Your referrer's code is filled in for you.
+            Came from an invite link? Your referrer's code is filled in for you.
+            Otherwise, ask whoever invited you for their code.
           </p>
         </div>
 
@@ -127,7 +144,11 @@ export default function Register() {
           </p>
         )}
 
-        <button onClick={handleActivate} disabled={busy} className="btn-primary mt-6 w-full py-3.5 text-base">
+        <button
+          onClick={handleActivate}
+          disabled={busy || !referral.trim()}
+          className="btn-primary mt-6 w-full py-3.5 text-base"
+        >
           {busy ? (
             <>
               <Spinner /> Setting up your account...

@@ -147,15 +147,26 @@ usersRouter.post("/register", blockDuringMaintenance, async (req, res) => {
     // Already fully registered — nothing to do.
     if (user?.registered) return res.json({ user: publicUser(user), alreadyRegistered: true });
 
-    // Resolve referrer from a code (only a registered referrer, never self).
+    // A referral code is REQUIRED to register (unless this wallet already has a
+    // referrer saved from an earlier attempt). It must belong to a real, registered
+    // user, and can't be the wallet's own code.
     let referrerAddress = user?.referrer_address || null;
-    if (!referrerAddress && referralCode) {
+    if (!referrerAddress) {
+      if (!referralCode) {
+        return res.status(400).json({ error: "referral code required", code: "REFERRAL_REQUIRED" });
+      }
       const r = await query(
         "SELECT wallet_address FROM users WHERE referral_code = $1 AND registered = TRUE",
         [referralCode]
       );
       const referrer = r.rows[0]?.wallet_address;
-      if (referrer && referrer !== address) referrerAddress = referrer;
+      if (!referrer) {
+        return res.status(400).json({ error: "invalid referral code", code: "REFERRAL_INVALID" });
+      }
+      if (referrer === address) {
+        return res.status(400).json({ error: "cannot use your own referral code", code: "REFERRAL_SELF" });
+      }
+      referrerAddress = referrer;
     }
 
     // CREATE the user row here (first time the wallet is persisted) or update it.
