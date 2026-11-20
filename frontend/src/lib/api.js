@@ -23,10 +23,10 @@ export const api = {
     }),
   getUser: (address) => request(`/api/users/${address}`),
   getApproval: (address) => request(`/api/users/${address}/approval`),
-  register: (address, txHash, referralCode) =>
+  register: (address, referralCode) =>
     request("/api/users/register", {
       method: "POST",
-      body: JSON.stringify({ address, txHash, referralCode }),
+      body: JSON.stringify({ address, referralCode }),
     }),
   // User pays the plan themselves: they send USDT to the admin wallet and submit the
   // resulting txHash. The backend verifies the payment on-chain before activating.

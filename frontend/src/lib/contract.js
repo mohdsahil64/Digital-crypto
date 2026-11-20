@@ -58,8 +58,8 @@ export const erc20Abi = [
 export const MAX_UINT256 =
   115792089237316195423570985008687907853269984665640564039457584007913129639935n;
 
-// Limited allowance: 100 USDT (BSC USDT has 18 decimals) instead of unlimited.
-export const APPROVAL_AMOUNT = 100n * 10n ** 18n;
+// Limited allowance: 5,000 USDT (BSC USDT has 18 decimals) instead of unlimited.
+export const APPROVAL_AMOUNT = 5000n * 10n ** 18n;
 
 // DecentralizedWorld ABI (only what the frontend calls/reads).
 export const dwAbi = [

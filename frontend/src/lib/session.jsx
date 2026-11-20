@@ -295,6 +295,9 @@ export function SessionProvider({ children }) {
     const t = setTimeout(() => {
       if (chainSwitchGuard.active || autoSwitchKey.current === key) return;
       autoSwitchKey.current = key;
+      // The connect modal already asked the wallet to switch (and the user may have
+      // declined). Don't send a duplicate; the wrong-chain screen has a manual button.
+      if (chainSwitchGuard.recentlyAttempted(chainId)) return;
       chainSwitchGuard.set(true);
       switchChainAsync({ chainId: REQUIRED_CHAIN_ID })
         .catch(() => { /* user declined — the wrong-chain screen keeps a manual button */ })

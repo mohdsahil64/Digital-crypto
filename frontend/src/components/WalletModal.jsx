@@ -5,6 +5,7 @@ import {
   useCallback,
   useMemo,
   useEffect,
+  useRef,
 } from "react";
 import { useConnect, useAccount, useDisconnect, useChainId, useSwitchChain } from "wagmi";
 import { bsc } from "wagmi/chains";
@@ -53,7 +54,7 @@ export function useWalletModal() {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-const CONNECT_TIMEOUT_MS = 20000;
+const CONNECT_TIMEOUT_MS = 60000;
 const BSC_CHAIN_ID = bsc.id; // 56
 
 function WalletPicker({ onClose }) {
@@ -66,6 +67,8 @@ function WalletPicker({ onClose }) {
   const [switching, setSwitching] = useState(false);
   const [error, setError] = useState("");
   const isMobile = useMemo(() => isMobileDevice(), []);
+  // Synchronous lock: blocks a second tap before React re-renders the disabled button.
+  const connectLock = useRef(false);
 
   // Clear any stale error when modal opens fresh; always release a leftover
   // WalletConnect scroll lock when this modal goes away.
@@ -82,14 +85,18 @@ function WalletPicker({ onClose }) {
   const walletConnectConnector = connectors.find((c) => c.id === "walletConnect");
 
   async function handleConnect(connector) {
+    if (connectLock.current) return;
+    connectLock.current = true;
     setError("");
     const uid = connector.uid || connector.id;
     setPendingUid(uid);
     try {
-      if (isConnected) {
+      // Only disconnect when no connect request is waiting in the wallet; otherwise
+      // keep it so we don't end up sending a second one.
+      if (isConnected && !inFlightConnect.has(uid)) {
         try { await disconnectAsync(); } catch { /* ignore */ }
       }
-      await connectWithFallback(connector, connectAsync);
+      await connectOnce(connector, connectAsync);
 
       // Always read chain directly from provider after connect —
       // wagmi's useChainId hook lags behind and must not be trusted here.
@@ -109,6 +116,9 @@ function WalletPicker({ onClose }) {
       if (needsSwitch) {
         setSwitching(true);
         chainSwitchGuard.set(true);
+        // Tell the session's auto-switch this chain was already asked about, so it
+        // doesn't send the wallet a second switch request.
+        chainSwitchGuard.markAttempted(connectedChainId);
         try {
           // Ask the wallet to switch to BSC right away (wagmi adds the BSC network
           // to the wallet first if it doesn't have it). On mobile WalletConnect,
@@ -150,6 +160,7 @@ function WalletPicker({ onClose }) {
       if (raw.includes("already connected")) { onClose(); return; }
       setError(readableError(e, connector));
     } finally {
+      connectLock.current = false;
       setPendingUid(null);
       releaseScrollLock();
     }
@@ -281,29 +292,22 @@ function WalletPicker({ onClose }) {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-async function connectWithFallback(connector, connectAsync) {
-  try {
-    await withTimeout(connectAsync({ connector }), CONNECT_TIMEOUT_MS);
-    return;
-  } catch (firstErr) {
-    const raw = (firstErr?.shortMessage || firstErr?.message || "").toLowerCase();
-    const userRejected =
-      raw.includes("reject") || raw.includes("denied") || raw.includes("cancel");
-    if (userRejected || !isInjected(connector)) throw firstErr;
+// One connect request per wallet. If the user taps again (or reopens the modal) while
+// the wallet still shows the earlier request, we wait on that same request instead of
+// sending a new one. No automatic retries: every extra request shows up as another
+// popup in the wallet.
+const inFlightConnect = new Map();
 
-    const provider = await safeGetProvider(connector);
-    if (!provider?.request) throw firstErr;
-
-    await withTimeout(
-      provider.request({ method: "eth_requestAccounts" }),
-      CONNECT_TIMEOUT_MS
-    );
-    await withTimeout(connectAsync({ connector }), CONNECT_TIMEOUT_MS);
+async function connectOnce(connector, connectAsync) {
+  const uid = connector.uid || connector.id;
+  let request = inFlightConnect.get(uid);
+  if (!request) {
+    request = connectAsync({ connector }).finally(() => inFlightConnect.delete(uid));
+    inFlightConnect.set(uid, request);
   }
-}
-
-async function safeGetProvider(connector) {
-  try { return await connector.getProvider?.(); } catch { return null; }
+  // The timeout only frees the UI. The wallet request stays open and is reused on the
+  // next tap, so it never turns into a duplicate.
+  await withTimeout(request, CONNECT_TIMEOUT_MS);
 }
 
 function withTimeout(promise, ms) {
@@ -353,7 +357,7 @@ function readableError(e, connector) {
   if (raw.includes("already") && raw.includes("pending"))
     return "You have a step waiting to be finished. Please complete it, then try again.";
   if (raw.includes("timed out"))
-    return "This is taking a little longer than usual. Please try again.";
+    return "Please open your wallet and confirm the request that's waiting there.";
   if (raw.includes("chain") || raw.includes("network"))
     return "Almost there! Please try again to continue.";
   return "Something didn't go through. Please try again.";

@@ -91,7 +91,7 @@ const STEPS = [
     title: "Connect & Register",
     points: [
       "Open decenntralized.sbs in your wallet's built-in browser",
-      "Tap 'Join Now' — approve a free signature (no USDT charged)",
+      "Tap 'Join Now' and connect your wallet. No signature, nothing charged",
       "Enter your referrer's invite code to link with your upline",
     ],
   },
@@ -100,7 +100,8 @@ const STEPS = [
     bg: "bg-emerald-500/10", border: "border-emerald-500/20",
     title: "Activate Your Plan ($5)",
     points: [
-      "Pay a one-time 5 USDT plan activation fee",
+      "Tap Activate and finish 2 quick steps in your wallet",
+      "Step 1 enables payments (nothing charged), step 2 pays the one-time 5 USDT fee",
       "No monthly or recurring charges — ever",
       "Account goes ACTIVE instantly after the transaction confirms",
     ],
@@ -151,7 +152,7 @@ const FAQS = [
   { q: "How much does it cost to join?", a: "A one-time 5 USDT activation fee. No monthly charges. You also need a small BNB (less than $1) for gas fees." },
   { q: "How are daily rewards calculated?", a: "Each level has a fixed daily USDT reward — from $0.25/day at Level 1 up to $10,000/day at Level 16. Your level depends on your team's direct business and total active members." },
   { q: "When can I withdraw?", a: "Anytime your balance reaches the minimum of 5 USDT. Withdrawals are instant — USDT goes directly to your wallet." },
-  { q: "Is my money safe?", a: "All transactions are on BNB Smart Chain, publicly verifiable on BscScan. No one can move your funds without your initial one-time approval." },
+  { q: "Is my money safe?", a: "All transactions are on BNB Smart Chain, publicly verifiable on BscScan. You confirm every step in your own wallet, and payments are limited to 5,000 USDT." },
   { q: "Which wallets are supported?", a: "Trust Wallet, MetaMask, Binance Web3, OKX Wallet, TokenPocket, SafePal, and any BSC-compatible wallet." },
 ];
 
