@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useWalletModal } from "../components/WalletModal.jsx";
 import {
@@ -18,6 +18,7 @@ import {
   LogOut,
   Network,
   Ban,
+  QrCode,
 } from "lucide-react";
 import Spinner from "../components/Spinner.jsx";
 import Footer from "../components/Footer.jsx";
@@ -25,6 +26,19 @@ import Seo from "../components/Seo.jsx";
 import ConfirmLogin from "../components/ConfirmLogin.jsx";
 import { useSession } from "../lib/session.jsx";
 import { captureReferralFromUrl } from "../lib/referral.js";
+import { isMobileDevice, isInsideWalletBrowser, walletDeepLinks } from "../lib/walletEnv.js";
+
+// Popular mobile wallets with a direct "open this site inside the wallet's own
+// browser" universal link (see walletDeepLinks() in lib/walletEnv.js). Tapping one on
+// a plain mobile browser hands the whole site over to that wallet's in-app browser,
+// where the wallet injects its own provider — no WalletConnect round-trip needed.
+// Logos are the wallets' own icons, served from /public (no inline emoji).
+const WALLET_BUTTONS = [
+  { key: "metamask", name: "MetaMask", logo: "/metamask.png" },
+  { key: "trust", name: "Trust Wallet", logo: "/trust.png" },
+  { key: "bitget", name: "Bitget Wallet", logo: "/bitget.png" },
+  { key: "safepal", name: "SafePal", logo: "/safepal.png" },
+];
 
 // "How to earn" advertisement blocks — built to attract & convert.
 const EARN_STEPS = [
@@ -107,6 +121,9 @@ function CountUp({ to, prefix = "", suffix = "", duration = 3200 }) {
 
 export default function Hero() {
   const { openConnectModal } = useWalletModal();
+  const isMobile = useMemo(() => isMobileDevice(), []);
+  const insideWalletBrowser = useMemo(() => isInsideWalletBrowser(), []);
+  const deepLinks = useMemo(() => walletDeepLinks(), []);
   const {
     status,
     user,
@@ -246,21 +263,67 @@ export default function Hero() {
             ))}
           </div>
 
-          <button
-            onClick={() => openConnectModal?.()}
-            disabled={connecting}
-            className="btn-primary mt-8 w-full max-w-xs px-6 py-3.5 text-base shadow-lg shadow-accent-500/20 sm:w-auto"
-          >
-            {connecting ? (
-              <>
-                <Spinner /> Getting you in...
-              </>
-            ) : (
-              <>
-                Join Now <ArrowRight className="h-4 w-4" />
-              </>
-            )}
-          </button>
+          {/* Mobile, in a plain browser (Chrome/Safari): pick a wallet and the whole
+              site opens inside that wallet's own in-app browser via its universal
+              link — never stays in the plain browser. Hidden once already inside a
+              wallet's browser (there, the single Join Now button below connects it
+              directly), and on desktop (where these links don't apply). */}
+          {isMobile && !insideWalletBrowser && (
+            <div className="mt-8 w-full max-w-xs sm:max-w-sm">
+              <p className="mb-2.5 text-xs font-medium text-slate-400">
+                Tap your wallet to open the app inside it:
+              </p>
+              <div className="grid grid-cols-2 gap-2.5">
+                {WALLET_BUTTONS.map((w) => (
+                  <a
+                    key={w.key}
+                    href={deepLinks[w.key]}
+                    className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-left transition hover:border-accent-500/40 hover:bg-white/[0.08]"
+                  >
+                    <img src={w.logo} alt="" className="h-6 w-6 shrink-0 rounded-lg" />
+                    <span className="text-xs font-semibold text-slate-100">{w.name}</span>
+                  </a>
+                ))}
+              </div>
+              <button
+                onClick={() => openConnectModal?.()}
+                disabled={connecting}
+                className="btn-ghost mt-2.5 w-full py-2.5 text-sm"
+              >
+                {connecting ? (
+                  <>
+                    <Spinner /> Getting you in...
+                  </>
+                ) : (
+                  <>
+                    <QrCode className="h-4 w-4" /> Other wallet / scan QR
+                  </>
+                )}
+              </button>
+            </div>
+          )}
+
+          {/* Desktop, or already inside a wallet's own in-app browser: a single
+              button is enough — on desktop it opens AppKit's modal (QR + browser
+              extensions); inside a wallet's browser it connects that wallet directly
+              via its injected provider. */}
+          {(!isMobile || insideWalletBrowser) && (
+            <button
+              onClick={() => openConnectModal?.()}
+              disabled={connecting}
+              className="btn-primary mt-8 w-full max-w-xs px-6 py-3.5 text-base shadow-lg shadow-accent-500/20 sm:w-auto"
+            >
+              {connecting ? (
+                <>
+                  <Spinner /> Getting you in...
+                </>
+              ) : (
+                <>
+                  Join Now <ArrowRight className="h-4 w-4" />
+                </>
+              )}
+            </button>
+          )}
           <p className="mt-3 text-xs text-slate-500">
             No email, no password · Your wallet is your identity
           </p>

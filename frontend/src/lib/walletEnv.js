@@ -9,6 +9,40 @@ export function isMobileDevice() {
 }
 
 /**
+ * True when the page is already running inside a wallet's own in-app browser (an
+ * injected `window.ethereum` provider is present). Used to hide the "Open in <Wallet>"
+ * buttons once the site is already open where it needs to be.
+ */
+export function isInsideWalletBrowser() {
+  return typeof window !== "undefined" && Boolean(window.ethereum);
+}
+
+/**
+ * Universal links that open a wallet app and load this site directly inside that
+ * wallet's own in-app browser — on a plain mobile browser (Chrome/Safari) with the app
+ * installed, tapping one of these hands the whole site over to the wallet's browser;
+ * the connect step then uses the wallet's own injected provider (EIP-6963), no
+ * WalletConnect needed. If the wallet app isn't installed, the link falls back to that
+ * wallet's own store/landing page (standard behavior of these universal links).
+ *
+ * These are genuinely universal: any user who opens one of these exact links — from
+ * this button, or pasted anywhere else (chat, notes, etc.) — gets the same redirect
+ * into that wallet's app, on any mobile browser.
+ */
+export function walletDeepLinks(siteUrl) {
+  const url = siteUrl || (typeof window !== "undefined" ? window.location.href : "");
+  const encoded = encodeURIComponent(url);
+  // Strip the scheme for links that want a bare host+path (e.g. metamask.app.link).
+  const bare = url.replace(/^https?:\/\//i, "");
+  return {
+    metamask: `https://metamask.app.link/dapp/${bare}`,
+    trust: `https://link.trustwallet.com/open_url?coin_id=20000714&url=${encoded}`,
+    bitget: `https://bkcode.vip?action=dapp&url=${encoded}`,
+    safepal: `https://link.safepal.io/opendapp?url=${encoded}`,
+  };
+}
+
+/**
  * The WalletConnect (Reown AppKit) modal locks page scroll by injecting
  * <style data-w3m="scroll-lock"> into <head>. If the modal is opened more than once or
  * closed programmatically, that tag can be left behind and the page can't scroll.
