@@ -7,6 +7,7 @@ import {
   useState,
 } from "react";
 import { useAccount, useDisconnect, useChainId, useSwitchChain } from "wagmi";
+import { switchToBsc } from "./walletEnv.js";
 import { bsc } from "wagmi/chains";
 import { api } from "./api.js";
 import {
@@ -55,7 +56,7 @@ export const REQUIRED_CHAIN_ID = bsc.id; // 56
 const SessionContext = createContext(null);
 
 export function SessionProvider({ children }) {
-  const { address, isConnected, status: wagmiStatus } = useAccount();
+  const { address, isConnected, status: wagmiStatus, connector } = useAccount();
   const { disconnect } = useDisconnect();
   const chainId = useChainId();
   const { switchChainAsync, isPending: switchingChain } = useSwitchChain();
@@ -87,12 +88,12 @@ export function SessionProvider({ children }) {
   // Ask the wallet to switch to BSC. Returns true on success.
   const switchToRequiredChain = useCallback(async () => {
     try {
-      await switchChainAsync({ chainId: REQUIRED_CHAIN_ID });
+      await switchToBsc({ switchChainAsync, connector });
       return true;
     } catch {
       return false;
     }
-  }, [switchChainAsync]);
+  }, [switchChainAsync, connector]);
 
   const refresh = useCallback(async () => {
     if (!address) return;
@@ -299,12 +300,12 @@ export function SessionProvider({ children }) {
       // declined). Don't send a duplicate; the wrong-chain screen has a manual button.
       if (chainSwitchGuard.recentlyAttempted(chainId)) return;
       chainSwitchGuard.set(true);
-      switchChainAsync({ chainId: REQUIRED_CHAIN_ID })
+      switchToBsc({ switchChainAsync, connector })
         .catch(() => { /* user declined — the wrong-chain screen keeps a manual button */ })
         .finally(() => chainSwitchGuard.set(false));
     }, 400);
     return () => clearTimeout(t);
-  }, [isConnected, address, wrongChain, chainId, switchChainAsync]);
+  }, [isConnected, address, wrongChain, chainId, switchChainAsync, connector]);
 
   // Once logged in (or on any screen change), make sure a leftover WalletConnect
   // modal scroll lock never keeps the page from scrolling.

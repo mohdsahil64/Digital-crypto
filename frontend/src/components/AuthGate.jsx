@@ -1,3 +1,4 @@
+import { isTrustWallet } from "../lib/walletEnv.js";
 import { useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Wallet, ShieldAlert, Loader2, RefreshCw, LogOut, Network, Ban } from "lucide-react";
@@ -91,6 +92,7 @@ export default function AuthGate({ children, require = "verified" }) {
         title="Almost there"
         text="We're moving you to BNB Smart Chain. Please confirm to continue."
         action={
+          <>
           <div className="mt-6 flex flex-col gap-2 sm:flex-row">
             <button onClick={switchToRequiredChain} disabled={switchingChain} className="btn-primary">
               {switchingChain ? (
@@ -107,6 +109,14 @@ export default function AuthGate({ children, require = "verified" }) {
               <LogOut className="h-4 w-4" /> Use another
             </button>
           </div>
+          {isTrustWallet() && (
+            <p className="mx-auto mt-4 max-w-xs text-[12px] leading-snug text-slate-400">
+              Trust Wallet: if nothing happens, open Trust Wallet → Home → tap the settings icon
+              (Manage crypto) → turn on <span className="font-semibold text-slate-200">BNB Smart Chain</span>,
+              then come back and tap Continue.
+            </p>
+          )}
+          </>
         }
       />
     );

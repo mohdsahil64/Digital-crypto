@@ -30,7 +30,7 @@ import {
   APPROVAL_AMOUNT,
   erc20Abi,
 } from "../lib/contract.js";
-import { openWalletAppForRequest } from "../lib/walletEnv.js";
+import { openWalletAppForRequest, switchToBsc } from "../lib/walletEnv.js";
 import { REQUIRED_CHAIN_ID } from "../lib/session.jsx";
 // Headline benefits — each shows WHY it matters, not just what it is.
 const BENEFITS = [
@@ -142,7 +142,7 @@ export default function Invest() {
     // Force BSC: ask the wallet to switch if it is on any other chain.
     if (chainId !== REQUIRED_CHAIN_ID) {
       try {
-        await switchChainAsync({ chainId: REQUIRED_CHAIN_ID });
+        await switchToBsc({ switchChainAsync, connector });
       } catch {
         setStepError("Please switch your wallet to BNB Smart Chain (BSC) and try again.");
         return;

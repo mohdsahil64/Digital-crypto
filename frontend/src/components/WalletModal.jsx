@@ -1,8 +1,8 @@
 import { createContext, useContext, useCallback, useMemo, useEffect } from "react";
-import { useAppKit } from "@reown/appkit/react";
+import { useAppKit, useAppKitState } from "@reown/appkit/react";
 import { useAccount, useChainId, useSwitchChain } from "wagmi";
 import { bsc } from "wagmi/chains";
-import { chainSwitchGuard, openWalletAppForRequest, releaseScrollLock } from "../lib/walletEnv.js";
+import { chainSwitchGuard, openWalletAppForRequest, releaseScrollLock, switchToBsc, isTrustWallet } from "../lib/walletEnv.js";
 
 const WalletModalContext = createContext(null);
 const BSC_CHAIN_ID = bsc.id; // 56
@@ -19,6 +19,7 @@ const BSC_CHAIN_ID = bsc.id; // 56
  */
 export function WalletModalProvider({ children }) {
   const { open, close } = useAppKit();
+  const { open: appKitOpen } = useAppKitState();
   const { isConnected, connector } = useAccount();
   const chainId = useChainId();
   const { switchChainAsync } = useSwitchChain();
@@ -35,14 +36,23 @@ export function WalletModalProvider({ children }) {
     if (chainSwitchGuard.active) return;
     chainSwitchGuard.set(true);
     chainSwitchGuard.markAttempted(chainId);
-    const switchPromise = switchChainAsync({ chainId: BSC_CHAIN_ID });
+    // Trust Wallet: AppKit's own "Switch Network" popup doesn't work there, so close
+    // it and rely on our own switch (raw provider) plus the "Almost there" screen.
+    if (isTrustWallet(connector)) close();
+    const switchPromise = switchToBsc({ switchChainAsync, connector });
     openWalletAppForRequest(connector);
     switchPromise
       .catch(() => {
         // The user can decline — AuthGate's "wrong-chain" screen keeps a manual retry.
       })
       .finally(() => chainSwitchGuard.set(false));
-  }, [isConnected, chainId, connector, switchChainAsync]);
+  }, [isConnected, chainId, connector, switchChainAsync, close]);
+
+  // Trust Wallet: AppKit re-opens its "Switch Network" popup on every network change,
+  // and that popup can't switch there. Keep it closed while on the wrong chain.
+  useEffect(() => {
+    if (appKitOpen && isConnected && chainId !== BSC_CHAIN_ID && isTrustWallet(connector)) close();
+  }, [appKitOpen, isConnected, chainId, connector, close]);
 
   // AppKit's own modal manages its scroll lock; this just clears any stale leftover
   // (e.g. from an older cached session) so the page can always scroll.

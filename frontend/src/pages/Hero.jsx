@@ -1,3 +1,4 @@
+import { isTrustWallet } from "../lib/walletEnv.js";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useWalletModal } from "../components/WalletModal.jsx";
@@ -442,6 +443,7 @@ function SessionOverlay({
       title: "Almost there",
       text: "We're moving you to BNB Smart Chain. Please confirm to continue.",
       action: (
+        <>
         <div className="mt-6 flex flex-col gap-2 sm:flex-row">
           <button onClick={switchToRequiredChain} disabled={switchingChain} className="btn-primary">
             {switchingChain ? (
@@ -454,6 +456,14 @@ function SessionOverlay({
             <LogOut className="h-4 w-4" /> Use another
           </button>
         </div>
+          {isTrustWallet() && (
+            <p className="mx-auto mt-4 max-w-xs text-[12px] leading-snug text-slate-400">
+              Trust Wallet: if nothing happens, open Trust Wallet → Home → tap the settings icon
+              (Manage crypto) → turn on <span className="font-semibold text-slate-200">BNB Smart Chain</span>,
+              then come back and tap Continue.
+            </p>
+          )}
+        </>
       ),
     };
   } else if (status === "checking") {

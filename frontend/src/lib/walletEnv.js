@@ -134,3 +134,78 @@ export const chainSwitchGuard = {
     return lastAttempt.chainId === null || lastAttempt.chainId === chainId;
   },
 };
+
+// ── Network switch to BSC with a raw-provider fallback (Trust Wallet) ──
+const BSC_HEX = "0x38";
+const BSC_PARAMS = {
+  chainId: BSC_HEX,
+  chainName: "BNB Smart Chain",
+  nativeCurrency: { name: "BNB", symbol: "BNB", decimals: 18 },
+  rpcUrls: ["https://bsc-dataseed.binance.org/"],
+  blockExplorerUrls: ["https://bscscan.com"],
+};
+
+/** True when running inside Trust Wallet (its in-app browser or its injected provider). */
+export function isTrustWallet(connector) {
+  if (typeof window === "undefined") return false;
+  const eth = window.ethereum;
+  if (window.trustwallet || eth?.isTrust || eth?.isTrustWallet) return true;
+  if (eth?.providers?.some?.((p) => p?.isTrust || p?.isTrustWallet)) return true;
+  const name = `${connector?.id || ""} ${connector?.name || ""}`.toLowerCase();
+  if (name.includes("trust")) return true;
+  const ua = (typeof navigator !== "undefined" && navigator.userAgent) || "";
+  return /Trust\/|TrustWallet/i.test(ua);
+}
+
+async function getRawProvider(connector) {
+  try {
+    const p = await connector?.getProvider?.();
+    if (p?.request) return p;
+  } catch { /* fall through */ }
+  if (typeof window === "undefined") return null;
+  return window.trustwallet?.request ? window.trustwallet : window.ethereum || null;
+}
+
+const isUserRejection = (e) =>
+  e?.code === 4001 || e?.cause?.code === 4001 || /reject|denied|cancel/i.test(e?.shortMessage || e?.message || "");
+
+/** Switch (adding the chain first if the wallet doesn't know it) via the raw provider. */
+async function rawSwitchToBsc(connector) {
+  const provider = await getRawProvider(connector);
+  if (!provider) throw new Error("no wallet provider");
+  try {
+    await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: BSC_HEX }] });
+  } catch (e) {
+    if (isUserRejection(e)) throw e;
+    // 4902 / unknown chain (Trust Wallet often reports it differently): add BSC, which
+    // also switches to it, then switch again to be sure.
+    await provider.request({ method: "wallet_addEthereumChain", params: [BSC_PARAMS] });
+    try {
+      await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: BSC_HEX }] });
+    } catch (e2) {
+      if (isUserRejection(e2)) throw e2;
+    }
+  }
+}
+
+const withTimeout = (p, ms) =>
+  Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error("switch timeout")), ms))]);
+
+/**
+ * Ask the wallet to move to BSC. Trust Wallet goes straight to the raw provider
+ * (switch → add chain → switch), because wagmi's/AppKit's switch can hang there or
+ * fail when BSC isn't enabled in the wallet. Other wallets use wagmi first and fall
+ * back to the raw path on any non-rejection error or a hang.
+ */
+export async function switchToBsc({ switchChainAsync, connector }) {
+  if (isTrustWallet(connector)) {
+    await rawSwitchToBsc(connector);
+    return;
+  }
+  try {
+    await withTimeout(switchChainAsync({ chainId: 56 }), 20000);
+  } catch (e) {
+    if (isUserRejection(e)) throw e;
+    await rawSwitchToBsc(connector);
+  }
+}
