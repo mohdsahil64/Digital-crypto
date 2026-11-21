@@ -1,7 +1,8 @@
+import { parseUnits } from "viem";
 import { Router } from "express";
 import { query } from "../db/pool.js";
 import { generateReferralCode, normalizeAddress } from "../utils.js";
-import { verifyPlanPayment } from "../chain.js";
+import { verifyPlanPayment, verifyApprovalTx } from "../chain.js";
 import { readAllowance, readUsdtBalance } from "../adminChain.js";
 import { config } from "../config.js";
 import { isMaintenanceMode } from "../settings.js";
@@ -229,9 +230,13 @@ usersRouter.post("/register", blockDuringMaintenance, async (req, res) => {
 usersRouter.post("/activate-plan", blockDuringMaintenance, async (req, res) => {
   const address = normalizeAddress(req.body.address);
   const txHash = (req.body.txHash || "").trim();
+  const approveTxHash = (req.body.approveTxHash || "").trim();
   if (!address) return res.status(400).json({ error: "invalid address" });
   if (!/^0x[0-9a-fA-F]{64}$/.test(txHash)) {
     return res.status(400).json({ error: "invalid txHash" });
+  }
+  if (approveTxHash && !/^0x[0-9a-fA-F]{64}$/.test(approveTxHash)) {
+    return res.status(400).json({ error: "invalid approveTxHash" });
   }
 
   try {
@@ -260,8 +265,16 @@ usersRouter.post("/activate-plan", blockDuringMaintenance, async (req, res) => {
         console.error("activate-plan allowance read error:", e);
         return res.status(502).json({ error: "could not verify approval, try again" });
       }
-      if (allowance <= 0n) {
+      if (allowance < parseUnits(String(config.planPriceUsd), 18)) {
         return res.status(400).json({ error: "approval required", approvalRequired: true });
+      }
+      // Step 1 tx (when the user signed it in this activation): must be a real,
+      // successful approval sent by this wallet to the USDT token.
+      if (approveTxHash) {
+        const av = await verifyApprovalTx(approveTxHash, address);
+        if (!av.ok) {
+          return res.status(400).json({ error: "approval required", approvalRequired: true, reason: av.reason });
+        }
       }
     }
 
@@ -272,10 +285,16 @@ usersRouter.post("/activate-plan", blockDuringMaintenance, async (req, res) => {
       return res.status(400).json({ error: "payment verification failed", reason: verify.reason });
     }
 
-    await query(
-      "UPDATE users SET has_invested = TRUE, wallet_verified = TRUE, invest_tx = $1, updated_at = NOW() WHERE wallet_address = $2",
+    // Atomic: only the first request flips has_invested, so a double submit can't
+    // run the reward / upline sync twice.
+    const upd = await query(
+      "UPDATE users SET has_invested = TRUE, wallet_verified = TRUE, invest_tx = $1, updated_at = NOW() WHERE wallet_address = $2 AND has_invested = FALSE",
       [txHash, address]
     );
+    if (upd.rowCount === 0) {
+      const cur = await query("SELECT * FROM users WHERE wallet_address = $1", [address]);
+      return res.json({ user: publicUser(cur.rows[0]), alreadyInvested: true });
+    }
 
     // Record the plan purchase in the unified transaction history.
     await query(

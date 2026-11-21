@@ -210,7 +210,7 @@ fi
 header "Step 5 — Health Check"
 
 info "Testing API..."
-HEALTH=$(curl -sk https://decenntralized.sbs/api/health 2>/dev/null || curl -s http://localhost:4000/api/health 2>/dev/null || echo "")
+HEALTH=$(curl -sk https://api.decenntralized.sbs/api/health 2>/dev/null || curl -s http://localhost:4000/api/health 2>/dev/null || echo "")
 if echo "$HEALTH" | grep -q '"status":"ok"'; then
   success "API health check passed ✓"
 else

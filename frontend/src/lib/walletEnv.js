@@ -36,12 +36,24 @@ export function releaseScrollLock() {
  */
 export async function openWalletAppForRequest(connector) {
   if (!isMobileDevice() || connector?.id !== "walletConnect") return;
+  // Already inside a wallet's in-app browser (injected provider): never navigate away,
+  // the request shows up in the wallet by itself.
+  if (typeof window !== "undefined" && window.ethereum) return;
   try {
     const provider = await connector.getProvider?.();
     const native = provider?.session?.peer?.metadata?.redirect?.native;
     if (!native) return;
+    // Only open real app schemes (trust://, metamask://). Never an http(s) URL, which
+    // would navigate this tab away from the site.
     const href = native.includes("://") ? native : `${native}://`;
-    window.location.href = href;
+    if (/^https?:/i.test(href)) return;
+    const a = document.createElement("a");
+    a.href = href;
+    a.rel = "noopener";
+    a.style.display = "none";
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => a.remove(), 1000);
   } catch {
     /* ignore — the user can open the wallet app manually */
   }

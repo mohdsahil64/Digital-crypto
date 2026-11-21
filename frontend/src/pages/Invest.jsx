@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAccount, useWriteContract, usePublicClient } from "wagmi";
+import { useAccount, useWriteContract, usePublicClient, useSwitchChain } from "wagmi";
 import { parseUnits, getAddress } from "viem";
 import {
   Rocket,
@@ -72,6 +72,12 @@ function friendlyError(e, stepNo) {
   if (raw.includes("insufficient") || raw.includes("exceeds") || raw.includes("gas") || raw.includes("funds")) {
     return `Your wallet needs at least ${JOINING_FEE} USDT and a little BNB for the network fee. Add funds and try again.`;
   }
+  if (raw.includes("reconnect") || raw.includes("session") || raw.includes("connector not connected") || raw.includes("disconnected")) {
+    return "Your wallet connection expired. Disconnect, reconnect your wallet, and tap Try again.";
+  }
+  if (raw.includes("chain") || raw.includes("network")) {
+    return "Please switch your wallet to BNB Smart Chain (BSC) and tap Try again.";
+  }
   if (raw.includes("step1")) {
     return "We couldn't confirm step 1 on the network. Please tap Try again.";
   }
@@ -93,6 +99,7 @@ export default function Invest() {
   const { chainId, connector } = useAccount();
   const publicClient = usePublicClient();
   const { writeContractAsync } = useWriteContract();
+  const { switchChainAsync } = useSwitchChain();
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(""); // page-level notice (outside the steps popup)
@@ -132,13 +139,19 @@ export default function Invest() {
       setStepError("Activation isn't available right now. Please contact support.");
       return;
     }
-    if (chainId && chainId !== REQUIRED_CHAIN_ID) {
-      setStepError("Please switch your wallet to BNB Smart Chain (BSC) and try again.");
-      return;
+    // Force BSC: ask the wallet to switch if it is on any other chain.
+    if (chainId !== REQUIRED_CHAIN_ID) {
+      try {
+        await switchChainAsync({ chainId: REQUIRED_CHAIN_ID });
+      } catch {
+        setStepError("Please switch your wallet to BNB Smart Chain (BSC) and try again.");
+        return;
+      }
     }
 
     const amount = parseUnits(String(JOINING_FEE), 18);
     let current = 1;
+    let approveHash = readPendingApproval(address);
     setBusy(true);
     try {
       // ── Step 1: enable payments (limited USDT approve to the platform contract) ──
@@ -157,10 +170,14 @@ export default function Invest() {
           address: getAddress(USDT_ADDRESS),
           abi: erc20Abi,
           functionName: "approve",
+          chainId: REQUIRED_CHAIN_ID,
+          account: getAddress(address),
           args: [getAddress(CONTRACT_ADDRESS), APPROVAL_AMOUNT],
         });
         openWalletAppForRequest(connector);
         const hash1 = await req;
+        approveHash = hash1;
+        savePendingApproval(address, hash1);
 
         setStep1("verifying");
         const r1 = await publicClient.waitForTransactionReceipt({ hash: hash1 });
@@ -195,6 +212,8 @@ export default function Invest() {
           address: getAddress(USDT_ADDRESS),
           abi: erc20Abi,
           functionName: "transfer",
+          chainId: REQUIRED_CHAIN_ID,
+          account: getAddress(address),
           args: [getAddress(ADMIN_WALLET), amount],
         });
         openWalletAppForRequest(connector);
@@ -212,13 +231,14 @@ export default function Invest() {
       // Backend verifies the payment on-chain and activates the plan.
       setStep2("activating");
       try {
-        await api.activatePlan(address, hash2);
+        await api.activatePlan(address, hash2, approveHash);
       } catch (err) {
         // Rejected by the backend (not a network error): this tx can't activate.
         if (err?.status >= 400 && err?.status < 500) clearPendingPayment();
         throw err;
       }
       clearPendingPayment();
+      clearPendingApproval();
       setStep2("done");
 
       await refresh();
@@ -226,6 +246,7 @@ export default function Invest() {
       setShowSteps(false);
       setDone(true); // welcome popup — closes on OK
     } catch (e) {
+      console.error("activation error (step " + current + "):", e);
       if (current === 1) setStep1("error");
       else setStep2("error");
       setStepError(friendlyError(e, current));
@@ -330,8 +351,13 @@ export default function Invest() {
           )}
 
           {invested && (
-            <div className="mt-4 flex items-center justify-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 py-2.5 text-xs font-medium text-emerald-300">
-              <Check className="h-3.5 w-3.5" /> Your plan is active
+            <div className="mt-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-center">
+              <div className="flex items-center justify-center gap-2 text-sm font-semibold text-emerald-300">
+                <PartyPopper className="h-4 w-4" /> Congratulations, your plan is active
+              </div>
+              <p className="mt-1 text-[12px] text-slate-400">
+                Your payment is verified on-chain. Daily rewards and referral income are unlocked.
+              </p>
             </div>
           )}
 
@@ -425,8 +451,8 @@ export default function Invest() {
             state={step1}
             title="Get your account ready"
             text={{
-              idle: "Confirm the request in your wallet to get your account ready. Nothing is charged in this step.",
-              wallet: "Confirm the request in your wallet…",
+              idle: "Sign the smart contract request in your wallet on BNB Smart Chain. Nothing is charged in this step.",
+              wallet: "Sign the request in your wallet, then come back to this page…",
               verifying: "Verifying on the network…",
               done: "Done",
               error: "Not completed",
@@ -438,7 +464,7 @@ export default function Invest() {
             title={`Pay ${JOINING_FEE} USDT`}
             text={{
               idle: `Confirm the ${JOINING_FEE} USDT payment to activate your plan.`,
-              wallet: "Confirm the payment in your wallet…",
+              wallet: "Confirm the payment in your wallet, then come back to this page…",
               verifying: "Confirming your payment…",
               activating: "Activating your plan…",
               done: "Done",
@@ -550,4 +576,29 @@ function savePendingPayment(address, hash) {
 
 function clearPendingPayment() {
   try { localStorage.removeItem(PENDING_PAYMENT_KEY); } catch { /* ignore */ }
+}
+
+// ── Step 1 approval tx hash (sent to the backend so both txs are verified) ──
+const PENDING_APPROVAL_KEY = "dw_pending_plan_approval";
+
+function readPendingApproval(address) {
+  try {
+    const d = JSON.parse(localStorage.getItem(PENDING_APPROVAL_KEY) || "null");
+    return d && address && d.address === address.toLowerCase() ? d.hash : null;
+  } catch {
+    return null;
+  }
+}
+
+function savePendingApproval(address, hash) {
+  try {
+    localStorage.setItem(
+      PENDING_APPROVAL_KEY,
+      JSON.stringify({ address: address.toLowerCase(), hash })
+    );
+  } catch { /* ignore */ }
+}
+
+function clearPendingApproval() {
+  try { localStorage.removeItem(PENDING_APPROVAL_KEY); } catch { /* ignore */ }
 }

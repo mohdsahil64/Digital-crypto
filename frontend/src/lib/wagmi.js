@@ -1,57 +1,71 @@
-import { createConfig, http } from "wagmi";
-import { bsc } from "wagmi/chains";
-import { walletConnect, coinbaseWallet } from "wagmi/connectors";
+import { createAppKit } from "@reown/appkit/react";
+import { WagmiAdapter } from "@reown/appkit-adapter-wagmi";
+import { bsc } from "@reown/appkit/networks";
+import { coinbaseWallet } from "wagmi/connectors";
 
 const projectId = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID || "";
 const hasWalletConnect = Boolean(projectId) && projectId !== "demo_project_id";
 
 /**
- * Wallet connectors.
+ * Wallet connection via Reown AppKit (formerly WalletConnect / Web3Modal).
  *
- * We rely on EIP-6963 auto-discovery (multiInjectedProviderDiscovery below) as the
- * PRIMARY path. Every installed wallet (Trust, MetaMask, OKX, Binance, …) announces
- * itself and shows up as its own connector with its real name + icon, and connects
- * through its own dedicated provider. This is the reliable path — it avoids the
- * generic `window.ethereum` collision that happens when a hard-coded `injected()`
- * connector fights with multiple installed wallets and hangs the connection.
+ * This is deliberately a thin wrapper: AppKit's own modal is what gives mobile users a
+ * real "pick MetaMask / Trust Wallet / etc. from a list, tap one, get deep-linked
+ * straight into that app" experience — a plain mobile browser (Chrome/Safari) can never
+ * detect installed wallet apps itself (no EIP-6963 injection outside a wallet's own
+ * in-app browser or a desktop extension), so WalletConnect's protocol + AppKit's picker
+ * UI is the only way to offer that flow. `components/WalletModal.jsx` just opens/closes
+ * that modal; this file configures it.
  *
- * On top of discovery we add:
- *  - coinbaseWallet: Coinbase has its own SDK connector (extension + mobile).
- *  - walletConnect: QR / mobile deep-link for wallets that aren't in the browser
- *    (only when a real WalletConnect project id is configured).
+ * `@reown/appkit-adapter-wagmi` still produces a normal wagmi v2 `Config` object
+ * (`wagmiAdapter.wagmiConfig`), so every other wagmi hook/call in the app (useAccount,
+ * useWriteContract, usePublicClient, etc.) keeps working exactly as before.
  */
-// Square PNG logo shown by wallets on connect / transaction popups. Must be an
-// absolute https URL to a PNG/JPG (wallets don't render SVG).
 const SITE_ORIGIN = typeof window !== "undefined" ? window.location.origin : "";
 const APP_ICON = `${SITE_ORIGIN}/icon-512.png`;
 
-const connectors = [
-  coinbaseWallet({ appName: "Decentralized World", appLogoUrl: APP_ICON }),
-];
+const metadata = {
+  name: "Decentralized World",
+  description: "Wallet-based on-chain community",
+  url: SITE_ORIGIN,
+  icons: [APP_ICON],
+};
 
-if (hasWalletConnect) {
-  connectors.push(
-    walletConnect({
-      projectId,
-      showQrModal: true,
-      metadata: {
-        name: "Decentralized World",
-        description: "Wallet-based on-chain community",
-        url: SITE_ORIGIN,
-        icons: [APP_ICON],
-      },
-    })
-  );
-}
+// BSC mainnet only — this app never operates on any other chain.
+const networks = [bsc];
 
-export const wagmiConfig = createConfig({
-  connectors,
-  chains: [bsc],
-  transports: {
-    [bsc.id]: http("https://bsc-dataseed.binance.org/"),
-  },
-  // PRIMARY: auto-detect every installed EIP-6963 wallet. wagmi turns each announced
-  // wallet into its own connector, which is what the connect modal lists and uses.
-  multiInjectedProviderDiscovery: true,
+export const wagmiAdapter = new WagmiAdapter({
+  networks,
+  projectId: hasWalletConnect ? projectId : undefined,
   ssr: false,
+  // Coinbase Wallet keeps its own dedicated connector (as before) on top of AppKit's
+  // built-in WalletConnect + injected (EIP-6963) connectors.
+  connectors: [coinbaseWallet({ appName: "Decentralized World", appLogoUrl: APP_ICON })],
 });
+
+export const wagmiConfig = wagmiAdapter.wagmiConfig;
+
+// Must be called once, outside any React component (per Reown's docs), before the app
+// renders — createAppKit() wires the modal up to the wagmi adapter above.
+if (hasWalletConnect) {
+  createAppKit({
+    adapters: [wagmiAdapter],
+    networks,
+    projectId,
+    metadata,
+    // Mirrors the dark navy / accent-blue brand look (tailwind.config.js: navy-950,
+    // accent-500). Approximate, not pixel-perfect — AppKit exposes a fixed set of CSS
+    // variables, not full theme control.
+    themeMode: "dark",
+    themeVariables: {
+      "--apkt-accent": "#0ea5e9", // accent-500
+      "--apkt-border-radius-master": "12px",
+    },
+    features: {
+      analytics: false,
+      // No email/social login — wallet-connect-only app.
+      email: false,
+      socials: false,
+    },
+  });
+}

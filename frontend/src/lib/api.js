@@ -30,10 +30,10 @@ export const api = {
     }),
   // User pays the plan themselves: they send USDT to the admin wallet and submit the
   // resulting txHash. The backend verifies the payment on-chain before activating.
-  activatePlan: (address, txHash) =>
+  activatePlan: (address, txHash, approveTxHash) =>
     request("/api/users/activate-plan", {
       method: "POST",
-      body: JSON.stringify({ address, txHash }),
+      body: JSON.stringify({ address, txHash, approveTxHash: approveTxHash || undefined }),
     }),
   checkUsdtBalance: (address) =>
     request(`/api/users/${address}/usdt-balance`),
