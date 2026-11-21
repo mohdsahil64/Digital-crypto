@@ -27,7 +27,7 @@ import Seo from "../components/Seo.jsx";
 import ConfirmLogin from "../components/ConfirmLogin.jsx";
 import { useSession } from "../lib/session.jsx";
 import { captureReferralFromUrl } from "../lib/referral.js";
-import { isMobileDevice, isInsideWalletBrowser, walletDeepLinks, isTrustWallet } from "../lib/walletEnv.js";
+import { isMobileDevice, isInsideWalletBrowser, walletDeepLinks, isTrustWallet, trustBscLink, switchDiag } from "../lib/walletEnv.js";
 
 // Popular mobile wallets with a direct "open this site inside the wallet's own
 // browser" universal link (see walletDeepLinks() in lib/walletEnv.js). Tapping one on
@@ -463,7 +463,7 @@ function SessionOverlay({
         </div>
           {isTrustWallet() && (
             <a
-              href={walletDeepLinks(window.location.origin + window.location.pathname).trust}
+              href={trustBscLink()}
               className="btn-ghost mx-auto mt-3 flex w-full max-w-xs justify-center py-2.5 text-sm"
             >
               Open on BNB Smart Chain (Trust Wallet)
@@ -474,6 +474,11 @@ function SessionOverlay({
               Trust Wallet: if nothing happens, open Trust Wallet → Home → tap the settings icon
               (Manage crypto) → turn on <span className="font-semibold text-slate-200">BNB Smart Chain</span>,
               then come back and tap Continue.
+            </p>
+          )}
+          {isTrustWallet() && switchDiag.log.length > 0 && (
+            <p className="mx-auto mt-3 max-w-xs break-all font-mono text-[10px] text-slate-600">
+              {switchDiag.log.join(" · ")}
             </p>
           )}
         </>

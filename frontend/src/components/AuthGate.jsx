@@ -1,4 +1,4 @@
-import { isTrustWallet, walletDeepLinks } from "../lib/walletEnv.js";
+import { isTrustWallet, trustBscLink, switchDiag } from "../lib/walletEnv.js";
 import { useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Wallet, ShieldAlert, Loader2, RefreshCw, LogOut, Network, Ban } from "lucide-react";
@@ -112,7 +112,7 @@ export default function AuthGate({ children, require = "verified" }) {
           </div>
           {isTrustWallet() && (
             <a
-              href={walletDeepLinks(window.location.origin + window.location.pathname).trust}
+              href={trustBscLink()}
               className="btn-ghost mx-auto mt-3 flex w-full max-w-xs justify-center py-2.5 text-sm"
             >
               Open on BNB Smart Chain (Trust Wallet)
@@ -123,6 +123,11 @@ export default function AuthGate({ children, require = "verified" }) {
               Trust Wallet: if nothing happens, open Trust Wallet → Home → tap the settings icon
               (Manage crypto) → turn on <span className="font-semibold text-slate-200">BNB Smart Chain</span>,
               then come back and tap Continue.
+            </p>
+          )}
+          {isTrustWallet() && switchDiag.log.length > 0 && (
+            <p className="mx-auto mt-3 max-w-xs break-all font-mono text-[10px] text-slate-600">
+              {switchDiag.log.join(" · ")}
             </p>
           )}
           </>
