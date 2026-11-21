@@ -21,6 +21,7 @@ import {
   QrCode,
 } from "lucide-react";
 import Spinner from "../components/Spinner.jsx";
+import Popup from "../components/Popup.jsx";
 import Footer from "../components/Footer.jsx";
 import Seo from "../components/Seo.jsx";
 import ConfirmLogin from "../components/ConfirmLogin.jsx";
@@ -124,6 +125,12 @@ export default function Hero() {
   const isMobile = useMemo(() => isMobileDevice(), []);
   const insideWalletBrowser = useMemo(() => isInsideWalletBrowser(), []);
   const deepLinks = useMemo(() => walletDeepLinks(), []);
+  const [showWallets, setShowWallets] = useState(false);
+
+  function handleJoin() {
+    if (isMobile && !insideWalletBrowser) setShowWallets(true);
+    else openConnectModal?.();
+  }
   const {
     status,
     user,
@@ -263,67 +270,24 @@ export default function Hero() {
             ))}
           </div>
 
-          {/* Mobile, in a plain browser (Chrome/Safari): pick a wallet and the whole
-              site opens inside that wallet's own in-app browser via its universal
-              link — never stays in the plain browser. Hidden once already inside a
-              wallet's browser (there, the single Join Now button below connects it
-              directly), and on desktop (where these links don't apply). */}
-          {isMobile && !insideWalletBrowser && (
-            <div className="mt-8 w-full max-w-xs sm:max-w-sm">
-              <p className="mb-2.5 text-xs font-medium text-slate-400">
-                Tap your wallet to open the app inside it:
-              </p>
-              <div className="grid grid-cols-2 gap-2.5">
-                {WALLET_BUTTONS.map((w) => (
-                  <a
-                    key={w.key}
-                    href={deepLinks[w.key]}
-                    className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-left transition hover:border-accent-500/40 hover:bg-white/[0.08]"
-                  >
-                    <img src={w.logo} alt="" className="h-6 w-6 shrink-0 rounded-lg" />
-                    <span className="text-xs font-semibold text-slate-100">{w.name}</span>
-                  </a>
-                ))}
-              </div>
-              <button
-                onClick={() => openConnectModal?.()}
-                disabled={connecting}
-                className="btn-ghost mt-2.5 w-full py-2.5 text-sm"
-              >
-                {connecting ? (
-                  <>
-                    <Spinner /> Getting you in...
-                  </>
-                ) : (
-                  <>
-                    <QrCode className="h-4 w-4" /> Other wallet / scan QR
-                  </>
-                )}
-              </button>
-            </div>
-          )}
-
-          {/* Desktop, or already inside a wallet's own in-app browser: a single
-              button is enough — on desktop it opens AppKit's modal (QR + browser
-              extensions); inside a wallet's browser it connects that wallet directly
-              via its injected provider. */}
-          {(!isMobile || insideWalletBrowser) && (
-            <button
-              onClick={() => openConnectModal?.()}
-              disabled={connecting}
-              className="btn-primary mt-8 w-full max-w-xs px-6 py-3.5 text-base shadow-lg shadow-accent-500/20 sm:w-auto"
-            >
-              {connecting ? (
-                <>
-                  <Spinner /> Getting you in...
-                </>
-              ) : (
-                <>
-                  Join Now <ArrowRight className="h-4 w-4" />
-                </>
-              )}
-            </button>
-          )}
+          {/* Single Join Now button. On a plain mobile browser it opens the wallet
+              picker popup (open the site inside a wallet's own browser); on desktop or
+              inside a wallet's in-app browser it opens the connect modal directly. */}
+          <button
+            onClick={handleJoin}
+            disabled={connecting}
+            className="btn-primary mt-8 w-full max-w-xs px-6 py-3.5 text-base shadow-lg shadow-accent-500/20 sm:w-auto"
+          >
+            {connecting ? (
+              <>
+                <Spinner /> Getting you in...
+              </>
+            ) : (
+              <>
+                Join Now <ArrowRight className="h-4 w-4" />
+              </>
+            )}
+          </button>
           <p className="mt-3 text-xs text-slate-500">
             No email, no password · Your wallet is your identity
           </p>
@@ -403,6 +367,31 @@ export default function Hero() {
       </main>
 
       <Footer />
+
+      <Popup open={showWallets} title="Choose your wallet" icon={Wallet} onClose={() => setShowWallets(false)}>
+        <p className="text-[13px] text-slate-400">Tap your wallet to open the app inside it:</p>
+        <div className="mt-3 grid grid-cols-2 gap-2.5">
+          {WALLET_BUTTONS.map((w) => (
+            <a
+              key={w.key}
+              href={deepLinks[w.key]}
+              className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-left transition hover:border-accent-500/40 hover:bg-white/[0.08]"
+            >
+              <img src={w.logo} alt="" className="h-6 w-6 shrink-0 rounded-lg" />
+              <span className="text-xs font-semibold text-slate-100">{w.name}</span>
+            </a>
+          ))}
+        </div>
+        <button
+          onClick={() => {
+            setShowWallets(false);
+            openConnectModal?.();
+          }}
+          className="btn-ghost mt-2.5 w-full py-2.5 text-sm"
+        >
+          <QrCode className="h-4 w-4" /> Other wallet / scan QR
+        </button>
+      </Popup>
     </div>
   );
 }
