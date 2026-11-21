@@ -1,4 +1,4 @@
-import { Fingerprint, ShieldCheck, LogIn, ArrowRight, LogOut } from "lucide-react";
+import { Fingerprint, ShieldCheck, LogIn, ArrowRight, LogOut, Network } from "lucide-react";
 import Spinner from "./Spinner.jsx";
 import Seo from "./Seo.jsx";
 
@@ -8,12 +8,24 @@ import Seo from "./Seo.jsx";
  * one family. Fully mobile responsive.
  *
  * Props:
- *  - address:      the connected wallet address
- *  - onContinue:   () => void   — log in with this wallet
- *  - onUseAnother: () => void   — disconnect + clear + restart from connect
- *  - busy:         boolean      — while logging in
+ *  - address:          the connected wallet address
+ *  - onContinue:       () => void   — log in with this wallet
+ *  - onUseAnother:     () => void   — disconnect + clear + restart from connect
+ *  - busy:             boolean      — while logging in / switching network
+ *  - disabled:         boolean      — true while the wallet is on the wrong chain;
+ *                       blocks "Continue" so the user can never proceed without first
+ *                       switching (the wallet's own network-switch prompt handles that)
+ *  - wrongChainNotice: boolean      — shows an inline notice explaining why Continue
+ *                       is disabled
  */
-export default function ConfirmLogin({ address, onContinue, onUseAnother, busy = false }) {
+export default function ConfirmLogin({
+  address,
+  onContinue,
+  onUseAnother,
+  busy = false,
+  disabled = false,
+  wrongChainNotice = false,
+}) {
   const shortish = address ? `${address.slice(0, 8)}...${address.slice(-6)}` : "";
 
   return (
@@ -50,14 +62,23 @@ export default function ConfirmLogin({ address, onContinue, onUseAnother, busy =
           <Point icon={LogIn} title="Instant access" text="Pick up right where you left off." />
         </div>
 
-        {/* Continue */}
+        {wrongChainNotice && (
+          <p className="mt-5 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-xs text-amber-200">
+            <Network className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            Switch your wallet to BNB Smart Chain to continue — use the network prompt
+            in your wallet.
+          </p>
+        )}
+
+        {/* Continue — blocked on the wrong chain so the user can never proceed without
+            switching first. */}
         <button
           onClick={onContinue}
-          disabled={busy}
-          className="btn-primary mt-6 w-full py-3.5 text-base"
+          disabled={busy || disabled}
+          className="btn-primary mt-6 w-full py-3.5 text-base disabled:opacity-50"
         >
           {busy ? (
-            <><Spinner /> Signing you in...</>
+            <><Spinner /> Switching network...</>
           ) : (
             <>Continue <ArrowRight className="h-4 w-4" /></>
           )}

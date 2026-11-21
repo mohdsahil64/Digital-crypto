@@ -28,6 +28,7 @@ export default function AuthGate({ children, require = "verified" }) {
     useAnotherWallet,
     switchToRequiredChain,
     switchingChain,
+    wrongChain,
   } = useSession();
   const { openConnectModal } = useWalletModal();
   const navigate = useNavigate();
@@ -123,12 +124,17 @@ export default function AuthGate({ children, require = "verified" }) {
   }
 
   // --- Connected: confirm which wallet before logging in (returning users). ---
+  // Still gated on the right chain — "Continue" stays disabled on the wrong chain so
+  // the user can never proceed without switching first (see wrongChain below).
   if (status === "confirm-login") {
     return (
       <ConfirmLogin
         address={address}
         onContinue={continueLogin}
         onUseAnother={useAnotherWallet}
+        busy={switchingChain}
+        disabled={wrongChain}
+        wrongChainNotice={wrongChain}
       />
     );
   }

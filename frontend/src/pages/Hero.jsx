@@ -422,6 +422,9 @@ function SessionOverlay({
   logout,
 }) {
   // Returning-user confirmation gets the full "Welcome back" screen (Register-styled).
+  // Still gated on the right chain: if the wallet connected on the wrong network,
+  // "Continue" stays disabled and the wallet's own network-switch prompt is what the
+  // user must act on first — they can never proceed on the wrong chain.
   if (status === "confirm-login") {
     return (
       <div className="fixed inset-0 z-[80]">
@@ -429,6 +432,9 @@ function SessionOverlay({
           address={address}
           onContinue={continueLogin}
           onUseAnother={useAnotherWallet}
+          busy={switchingChain}
+          disabled={wrongChain}
+          wrongChainNotice={wrongChain}
         />
       </div>
     );
