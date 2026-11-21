@@ -123,12 +123,14 @@ function CountUp({ to, prefix = "", suffix = "", duration = 3200 }) {
 export default function Hero() {
   const { openConnectModal } = useWalletModal();
   const isMobile = useMemo(() => isMobileDevice(), []);
-  const insideWalletBrowser = useMemo(() => isInsideWalletBrowser(), []);
   const deepLinks = useMemo(() => walletDeepLinks(), []);
   const [showWallets, setShowWallets] = useState(false);
 
   function handleJoin() {
-    if (isMobile && !insideWalletBrowser) setShowWallets(true);
+    // Checked at click time: wallets may inject their provider after page load.
+    // Inside a wallet's own browser, never show the deep-link buttons (they would
+    // try to reopen the site in another app) — go straight to the connect modal.
+    if (isMobile && !isInsideWalletBrowser()) setShowWallets(true);
     else openConnectModal?.();
   }
   const {

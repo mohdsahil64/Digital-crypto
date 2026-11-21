@@ -14,7 +14,21 @@ export function isMobileDevice() {
  * buttons once the site is already open where it needs to be.
  */
 export function isInsideWalletBrowser() {
-  return typeof window !== "undefined" && Boolean(window.ethereum);
+  if (typeof window === "undefined") return false;
+  const eth = window.ethereum;
+  if (eth) return true;
+  // Some wallets inject the provider a moment after page load, so also check the
+  // user agent / wallet-specific globals.
+  if (window.trustwallet || window.bitkeep || window.safepal || window.okxwallet || window.phantom?.ethereum) return true;
+  const ua = (typeof navigator !== "undefined" && navigator.userAgent) || "";
+  return /MetaMaskMobile|Trust\/|TrustWallet|BitKeep|Bitget|SafePal|OKApp|TokenPocket|imToken|CoinbaseWallet|Binance/i.test(ua);
+}
+
+/** True while Reown AppKit's own modal is on screen. */
+export function isAppKitModalOpen() {
+  if (typeof document === "undefined") return false;
+  const el = document.querySelector("w3m-modal");
+  return Boolean(el && el.classList.contains("open"));
 }
 
 /**
@@ -50,6 +64,10 @@ export function walletDeepLinks(siteUrl) {
  */
 export function releaseScrollLock() {
   if (typeof document === "undefined") return;
+  // Never touch the lock while AppKit's modal is open: that same style tag is what
+  // makes the modal clickable (w3m-modal { pointer-events: auto }) and blocks the
+  // page behind it. Removing it left the modal un-clickable and the page scrollable.
+  if (isAppKitModalOpen()) return;
   document.head
     .querySelectorAll('style[data-w3m="scroll-lock"]')
     .forEach((el) => el.remove());
