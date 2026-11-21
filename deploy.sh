@@ -182,7 +182,15 @@ if $FRONTEND_CHANGED; then
   fi
 
   # Remove aaPanel's .user.ini that breaks vite build
-  rm -f dist/.user.ini 2>/dev/null && info "Removed .user.ini (aaPanel artifact)"
+  # aaPanel marks it immutable (chattr +i), so plain rm fails silently.
+  if [[ -e dist/.user.ini ]]; then
+    chattr -i dist/.user.ini 2>/dev/null || true
+    rm -f dist/.user.ini 2>/dev/null
+    if [[ -e dist/.user.ini ]]; then
+      fail "Could not remove dist/.user.ini — disable 'Anti-XSS' (open_basedir) in aaPanel site settings"
+    fi
+    info "Removed .user.ini (aaPanel artifact)"
+  fi
 
   # Build
   info "Building frontend (vite build)..."
