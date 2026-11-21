@@ -119,7 +119,11 @@ export default function Invest() {
   }, [user]);
 
   // Activate button: open the two-step popup. Nothing is sent to the wallet yet.
-  function handleActivate() {
+  async function handleActivate() {
+    // Wrong network: open the wallet's switch prompt right away (no error first).
+    if ((await liveChainId()) !== REQUIRED_CHAIN_ID) {
+      try { await switchToBsc({ switchChainAsync, connector }); } catch { /* popup below re-checks */ }
+    }
     setError("");
     setStepError("");
     setStep1("idle");
@@ -132,6 +136,26 @@ export default function Invest() {
     setShowSteps(false);
   }
 
+  async function liveChainId() {
+    try {
+      const id = await connector?.getChainId?.();
+      if (id != null) return Number(id);
+    } catch { /* fall back */ }
+    return chainId;
+  }
+
+  // Returns true once the wallet is on BSC. Otherwise asks the wallet to switch (popup
+  // in the wallet, no error shown first); returns false only if it still isn't on BSC.
+  async function ensureBsc() {
+    if ((await liveChainId()) === REQUIRED_CHAIN_ID) return true;
+    try {
+      await switchToBsc({ switchChainAsync, connector });
+    } catch { /* checked below */ }
+    if ((await liveChainId()) === REQUIRED_CHAIN_ID) return true;
+    setStepError("Please switch your wallet to BNB Smart Chain, then tap Try again.");
+    return false;
+  }
+
   async function runActivation() {
     setStepError("");
 
@@ -139,15 +163,10 @@ export default function Invest() {
       setStepError("Activation isn't available right now. Please contact support.");
       return;
     }
-    // Force BSC: ask the wallet to switch if it is on any other chain.
-    if (chainId !== REQUIRED_CHAIN_ID) {
-      try {
-        await switchToBsc({ switchChainAsync, connector });
-      } catch {
-        setStepError("Please switch your wallet to BNB Smart Chain (BSC) and try again.");
-        return;
-      }
-    }
+    // Force BSC before ANY step: read the wallet's live chain (not a cached value) and
+    // open the wallet's switch prompt straight away if it's wrong. No step runs until
+    // the wallet is really on BNB Smart Chain.
+    if (!(await ensureBsc())) return;
 
     const amount = parseUnits(String(JOINING_FEE), 18);
     let current = 1;
@@ -189,6 +208,8 @@ export default function Invest() {
 
       // ── Step 2: pay the plan price to the admin wallet ──
       current = 2;
+      // The user may have changed network in the wallet between the two steps.
+      if (!(await ensureBsc())) return;
 
       // A payment already sent from this wallet (page closed or connection lost before
       // activation finished)? Finish with it instead of charging the user again.

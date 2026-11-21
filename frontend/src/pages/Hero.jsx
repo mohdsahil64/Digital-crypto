@@ -1,4 +1,3 @@
-import { isTrustWallet } from "../lib/walletEnv.js";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useWalletModal } from "../components/WalletModal.jsx";
@@ -28,7 +27,7 @@ import Seo from "../components/Seo.jsx";
 import ConfirmLogin from "../components/ConfirmLogin.jsx";
 import { useSession } from "../lib/session.jsx";
 import { captureReferralFromUrl } from "../lib/referral.js";
-import { isMobileDevice, isInsideWalletBrowser, walletDeepLinks } from "../lib/walletEnv.js";
+import { isMobileDevice, isInsideWalletBrowser, walletDeepLinks, isTrustWallet } from "../lib/walletEnv.js";
 
 // Popular mobile wallets with a direct "open this site inside the wallet's own
 // browser" universal link (see walletDeepLinks() in lib/walletEnv.js). Tapping one on
@@ -462,6 +461,14 @@ function SessionOverlay({
             <LogOut className="h-4 w-4" /> Use another
           </button>
         </div>
+          {isTrustWallet() && (
+            <a
+              href={walletDeepLinks(window.location.origin + window.location.pathname).trust}
+              className="btn-ghost mx-auto mt-3 flex w-full max-w-xs justify-center py-2.5 text-sm"
+            >
+              Open on BNB Smart Chain (Trust Wallet)
+            </a>
+          )}
           {isTrustWallet() && (
             <p className="mx-auto mt-4 max-w-xs text-[12px] leading-snug text-slate-400">
               Trust Wallet: if nothing happens, open Trust Wallet → Home → tap the settings icon

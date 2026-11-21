@@ -6,7 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { useAccount, useDisconnect, useChainId, useSwitchChain } from "wagmi";
+import { useAccount, useDisconnect, useSwitchChain } from "wagmi";
 import { switchToBsc } from "./walletEnv.js";
 import { bsc } from "wagmi/chains";
 import { api } from "./api.js";
@@ -56,10 +56,13 @@ export const REQUIRED_CHAIN_ID = bsc.id; // 56
 const SessionContext = createContext(null);
 
 export function SessionProvider({ children }) {
-  const { address, isConnected, status: wagmiStatus, connector } = useAccount();
+  // The wallet's REAL chain. useChainId() only ever returns a configured chain (here
+  // always BSC), so it can't detect a wallet sitting on Ethereum/Polygon/etc.
+  const { address, isConnected, status: wagmiStatus, connector, chainId } = useAccount();
   const { disconnect } = useDisconnect();
-  const chainId = useChainId();
-  const { switchChainAsync, isPending: switchingChain } = useSwitchChain();
+  const { switchChainAsync, isPending: wagmiSwitching } = useSwitchChain();
+  const [rawSwitching, setRawSwitching] = useState(false);
+  const switchingChain = wagmiSwitching || rawSwitching;
 
   const wrongChain = isConnected && chainId != null && chainId !== REQUIRED_CHAIN_ID;
 
@@ -88,10 +91,13 @@ export function SessionProvider({ children }) {
   // Ask the wallet to switch to BSC. Returns true on success.
   const switchToRequiredChain = useCallback(async () => {
     try {
+      setRawSwitching(true);
       await switchToBsc({ switchChainAsync, connector });
       return true;
     } catch {
       return false;
+    } finally {
+      setRawSwitching(false);
     }
   }, [switchChainAsync, connector]);
 
@@ -154,10 +160,15 @@ export function SessionProvider({ children }) {
   // Called from the confirm-login screen when the user chooses to continue with the
   // connected wallet.
   const continueLogin = useCallback(() => {
+    // Never log in on the wrong network: Continue asks the wallet to switch instead.
+    if (wrongChain) {
+      switchToRequiredChain();
+      return;
+    }
     const pre = pendingConnect.current;
     pendingConnect.current = null;
     authenticate(pre);
-  }, [authenticate]);
+  }, [authenticate, wrongChain, switchToRequiredChain]);
 
   // Drive the state machine off the wallet connection. Because reconnectOnMount is
   // false, `isConnected` is only true after the user explicitly connects — so this

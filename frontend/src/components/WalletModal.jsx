@@ -1,6 +1,6 @@
 import { createContext, useContext, useCallback, useMemo, useEffect } from "react";
 import { useAppKit, useAppKitState } from "@reown/appkit/react";
-import { useAccount, useChainId, useSwitchChain } from "wagmi";
+import { useAccount, useSwitchChain } from "wagmi";
 import { bsc } from "wagmi/chains";
 import { chainSwitchGuard, openWalletAppForRequest, releaseScrollLock, switchToBsc, isTrustWallet } from "../lib/walletEnv.js";
 
@@ -20,8 +20,8 @@ const BSC_CHAIN_ID = bsc.id; // 56
 export function WalletModalProvider({ children }) {
   const { open, close } = useAppKit();
   const { open: appKitOpen } = useAppKitState();
-  const { isConnected, connector } = useAccount();
-  const chainId = useChainId();
+  // Real wallet chain (useChainId() would always report the configured BSC).
+  const { isConnected, connector, chainId } = useAccount();
   const { switchChainAsync } = useSwitchChain();
 
   const openConnectModal = useCallback(() => open({ view: "Connect" }), [open]);
@@ -32,7 +32,7 @@ export function WalletModalProvider({ children }) {
   // `chainSwitchGuard` stops the two from firing a duplicate wallet_switchEthereumChain
   // request at the same time.
   useEffect(() => {
-    if (!isConnected || chainId === BSC_CHAIN_ID) return;
+    if (!isConnected || chainId == null || chainId === BSC_CHAIN_ID) return;
     if (chainSwitchGuard.active) return;
     chainSwitchGuard.set(true);
     chainSwitchGuard.markAttempted(chainId);

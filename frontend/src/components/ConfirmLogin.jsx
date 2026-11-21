@@ -74,11 +74,13 @@ export default function ConfirmLogin({
             switching first. */}
         <button
           onClick={onContinue}
-          disabled={busy || disabled}
-          className="btn-primary mt-6 w-full py-3.5 text-base disabled:opacity-50"
+          disabled={busy}
+          className={`btn-primary mt-6 w-full py-3.5 text-base disabled:opacity-50 ${disabled ? "opacity-50" : ""}`}
         >
           {busy ? (
             <><Spinner /> Switching network...</>
+          ) : disabled ? (
+            <><Network className="h-4 w-4" /> Switch to BNB Smart Chain</>
           ) : (
             <>Continue <ArrowRight className="h-4 w-4" /></>
           )}

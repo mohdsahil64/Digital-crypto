@@ -30,6 +30,13 @@ export default function Register() {
   async function handleActivate() {
     setError("");
 
+    // Wrong network: no account is created. The button only asks the wallet to switch
+    // to BNB Smart Chain; once switched the user taps it again.
+    if (wrongChain) {
+      await switchToRequiredChain();
+      return;
+    }
+
     // A referral code is required — no direct/code-less registration.
     const code = referral.trim();
     if (!code) {
@@ -37,14 +44,6 @@ export default function Register() {
       return;
     }
 
-    // Must be on BNB Smart Chain before continuing — prompt a switch if not.
-    if (wrongChain) {
-      const ok = await switchToRequiredChain();
-      if (!ok) {
-        setError("Almost there! Please try again to continue.");
-        return;
-      }
-    }
     setBusy(true);
     try {
       // No wallet popup here: the connected wallet is enough to create the account.
@@ -146,13 +145,15 @@ export default function Register() {
 
         <button
           onClick={handleActivate}
-          disabled={busy || !referral.trim()}
-          className="btn-primary mt-6 w-full py-3.5 text-base"
+          disabled={busy || (!wrongChain && !referral.trim())}
+          className={`btn-primary mt-6 w-full py-3.5 text-base ${wrongChain ? "opacity-50" : ""}`}
         >
           {busy ? (
             <>
               <Spinner /> Setting up your account...
             </>
+          ) : wrongChain ? (
+            <>Switch to BNB Smart Chain</>
           ) : (
             <>
               Create account <ArrowRight className="h-4 w-4" />

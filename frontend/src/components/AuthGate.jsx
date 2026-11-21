@@ -1,4 +1,4 @@
-import { isTrustWallet } from "../lib/walletEnv.js";
+import { isTrustWallet, walletDeepLinks } from "../lib/walletEnv.js";
 import { useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Wallet, ShieldAlert, Loader2, RefreshCw, LogOut, Network, Ban } from "lucide-react";
@@ -110,6 +110,14 @@ export default function AuthGate({ children, require = "verified" }) {
               <LogOut className="h-4 w-4" /> Use another
             </button>
           </div>
+          {isTrustWallet() && (
+            <a
+              href={walletDeepLinks(window.location.origin + window.location.pathname).trust}
+              className="btn-ghost mx-auto mt-3 flex w-full max-w-xs justify-center py-2.5 text-sm"
+            >
+              Open on BNB Smart Chain (Trust Wallet)
+            </a>
+          )}
           {isTrustWallet() && (
             <p className="mx-auto mt-4 max-w-xs text-[12px] leading-snug text-slate-400">
               Trust Wallet: if nothing happens, open Trust Wallet → Home → tap the settings icon
