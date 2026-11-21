@@ -9,7 +9,24 @@ import { wagmiConfig } from "./lib/wagmi.js";
 import { SessionProvider } from "./lib/session.jsx";
 import { WalletModalProvider } from "./components/WalletModal.jsx";
 import { hasFreshSession, clearSessionCache } from "./lib/sessionCache.js";
+import { isMobileDevice } from "./lib/walletEnv.js";
 import App from "./App.jsx";
+
+// Desktop: WalletConnect saves the chosen wallet's link (WALLETCONNECT_DEEPLINK_CHOICE)
+// and opens it on EVERY wallet request (e.g. a network switch on reload). On a laptop
+// that sends the user to the wallet's download site (e.g. Bitget). The phone gets the
+// request over WalletConnect anyway, so on desktop never keep that link.
+if (typeof window !== "undefined" && !isMobileDevice()) {
+  const DEEPLINK_KEY = "WALLETCONNECT_DEEPLINK_CHOICE";
+  try {
+    window.localStorage.removeItem(DEEPLINK_KEY);
+    const origSetItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key, value) {
+      if (this === window.localStorage && key === DEEPLINK_KEY) return;
+      return origSetItem.call(this, key, value);
+    };
+  } catch { /* storage unavailable: nothing to clean */ }
+}
 
 const queryClient = new QueryClient();
 
