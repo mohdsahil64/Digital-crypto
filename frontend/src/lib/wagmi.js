@@ -53,6 +53,9 @@ if (hasWalletConnect) {
     networks,
     projectId,
     metadata,
+    // Don't show AppKit's "Switch Network" modal when the wallet is on a non-BSC chain.
+    // Login/register work on any chain; BSC is enforced only on the signing steps.
+    allowUnsupportedChain: true,
     // Mirrors the dark navy / accent-blue brand look (tailwind.config.js: navy-950,
     // accent-500). Approximate, not pixel-perfect — AppKit exposes a fixed set of CSS
     // variables, not full theme control.

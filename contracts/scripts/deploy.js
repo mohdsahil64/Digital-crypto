@@ -5,7 +5,7 @@ async function main() {
   const usdt = process.env.USDT_ADDRESS;
   const admin = process.env.ADMIN_WALLET;
   const priceHuman = process.env.PLAN_PRICE_USDT || process.env.JOINING_FEE_USDT || "5";
-  // Hard per-call cap on the owner's adminCharge/adminChargeTo/adminChargePlan — an
+  // Hard per-call cap on the owner's adminCharge/adminChargePlan — an
   // extra ceiling below whatever a user approved. Defaults to 10,000 USDT.
   const maxChargeHuman = process.env.MAX_ADMIN_CHARGE_USDT || "10000";
 

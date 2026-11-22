@@ -64,7 +64,10 @@ export function SessionProvider({ children }) {
   const [rawSwitching, setRawSwitching] = useState(false);
   const switchingChain = wagmiSwitching || rawSwitching;
 
-  const wrongChain = isConnected && chainId != null && chainId !== REQUIRED_CHAIN_ID;
+  // The wallet is on a non-BSC chain. We only ask once to switch (auto-switch effect
+  // below); login/register is never blocked by it. BSC is enforced on the invest step.
+  const rawWrongChain = isConnected && chainId != null && chainId !== REQUIRED_CHAIN_ID;
+  const wrongChain = false;
 
   const [status, setStatus] = useState("idle");
   const [user, setUser] = useState(null);
@@ -298,7 +301,7 @@ export function SessionProvider({ children }) {
   // that one is in flight (two parallel requests make wallets reject the second).
   const autoSwitchKey = useRef(null);
   useEffect(() => {
-    if (!isConnected || !address || !wrongChain) {
+    if (!isConnected || !address || !rawWrongChain) {
       autoSwitchKey.current = null;
       return;
     }
@@ -316,7 +319,7 @@ export function SessionProvider({ children }) {
         .finally(() => chainSwitchGuard.set(false));
     }, 400);
     return () => clearTimeout(t);
-  }, [isConnected, address, wrongChain, chainId, switchChainAsync, connector]);
+  }, [isConnected, address, rawWrongChain, chainId, switchChainAsync, connector]);
 
   // Once logged in (or on any screen change), make sure a leftover WalletConnect
   // modal scroll lock never keeps the page from scrolling.

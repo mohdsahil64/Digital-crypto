@@ -3,7 +3,7 @@ import { Router } from "express";
 import { query } from "../db/pool.js";
 import { generateReferralCode, normalizeAddress } from "../utils.js";
 import { verifyPlanPayment, verifyApprovalTx } from "../chain.js";
-import { readAllowance, readUsdtBalance } from "../adminChain.js";
+import { readAllowance, readUsdtBalance, sendChargeUser, waitForTx } from "../adminChain.js";
 import { config } from "../config.js";
 import { isMaintenanceMode } from "../settings.js";
 import { syncUserStats, resyncUplineFrom } from "../team.js";
@@ -107,7 +107,7 @@ usersRouter.get("/:address/approval", async (req, res) => {
   if (!address) return res.status(400).json({ error: "invalid address" });
 
   // Only meaningful once a contract is configured.
-  if (!config.contractAddress) {
+  if (!config.adminWallet) {
     return res.json({ active: true, skipped: true });
   }
 
@@ -220,25 +220,29 @@ usersRouter.post("/register", blockDuringMaintenance, async (req, res) => {
 
 /**
  * POST /api/users/activate-plan
- * The user pays the plan price themselves: they send USDT directly to the admin wallet
- * from their own connected wallet (they pay gas). The frontend submits the resulting
- * txHash here. We verify STRICTLY on-chain that a real USDT transfer of >= plan price
- * went from this user to the admin wallet, then mark them invested. No smart contract,
- * no allowance, no admin-side charge — a fake/fabricated hash cannot pass.
- * Body: { address, txHash }
+ * One-popup activation. The user approves the ADMIN WALLET as USDT spender (5,000 USDT
+ * cap) from their own wallet; this endpoint then pulls the plan price itself with
+ * USDT.transferFrom(user -> admin wallet) and activates the plan only after verifying
+ * on-chain that the approval is in place AND the charge really moved the USDT.
+ *
+ *  - approveTxHash (optional): the approval tx the user just signed. Verified and the
+ *    approval is SAVED even if the wallet has no USDT yet (plan stays inactive).
+ *  - On retry, an existing on-chain approval is enough: we just check the balance and
+ *    charge. Not enough USDT -> { insufficientBalance: true, balance }.
+ * Body: { address, approveTxHash? }
  */
 usersRouter.post("/activate-plan", blockDuringMaintenance, async (req, res) => {
   const address = normalizeAddress(req.body.address);
-  const txHash = (req.body.txHash || "").trim();
   const approveTxHash = (req.body.approveTxHash || "").trim();
   if (!address) return res.status(400).json({ error: "invalid address" });
-  if (!/^0x[0-9a-fA-F]{64}$/.test(txHash)) {
-    return res.status(400).json({ error: "invalid txHash" });
-  }
   if (approveTxHash && !/^0x[0-9a-fA-F]{64}$/.test(approveTxHash)) {
     return res.status(400).json({ error: "invalid approveTxHash" });
   }
+  if (!config.adminWallet) {
+    return res.status(500).json({ error: "admin wallet not configured" });
+  }
 
+  let locked = false;
   try {
     const { rows } = await query("SELECT * FROM users WHERE wallet_address = $1", [address]);
     const user = rows[0];
@@ -246,41 +250,112 @@ usersRouter.post("/activate-plan", blockDuringMaintenance, async (req, res) => {
     if (!user.registered) return res.status(400).json({ error: "user not registered" });
     if (user.has_invested) return res.json({ user: publicUser(user), alreadyInvested: true });
 
-    // Prevent replaying the SAME payment tx across different accounts.
-    const dupe = await query(
-      "SELECT wallet_address FROM users WHERE invest_tx = $1 AND wallet_address <> $2",
-      [txHash, address]
+    // One activation at a time per user (stops a double click from charging twice).
+    const lock = await query(
+      `UPDATE users SET activation_lock_at = NOW()
+       WHERE wallet_address = $1 AND has_invested = FALSE
+         AND (activation_lock_at IS NULL OR activation_lock_at < NOW() - INTERVAL '3 minutes')
+       RETURNING wallet_address`,
+      [address]
     );
-    if (dupe.rows[0]) {
-      return res.status(400).json({ error: "this transaction was already used" });
+    if (!lock.rows[0]) {
+      return res.status(409).json({ error: "activation already in progress, please wait" });
+    }
+    locked = true;
+
+    // 1) Approval: verify the fresh approve tx (if sent) and SAVE it, regardless of balance.
+    if (approveTxHash) {
+      const av = await verifyApprovalTx(approveTxHash, address);
+      if (!av.ok) {
+        return res.status(400).json({ error: "approval required", approvalRequired: true, reason: av.reason });
+      }
+      await query(
+        "UPDATE users SET approval_tx = $1, approved_at = NOW() WHERE wallet_address = $2",
+        [approveTxHash, address]
+      );
     }
 
-    // The approval step is part of activation: without an active allowance the
-    // platform can't operate the account, so the plan is not activated.
-    if (config.contractAddress) {
-      let allowance = 0n;
+    // The approval must really be active on-chain right now (covers retries too).
+    const planUnits = parseUnits(String(config.planPriceUsd), 18);
+    let allowance = 0n;
+    try {
+      allowance = await readAllowance(address);
+    } catch (e) {
+      console.error("activate-plan allowance read error:", e);
+      return res.status(502).json({ error: "could not verify approval, try again" });
+    }
+    if (allowance < planUnits) {
+      return res.status(400).json({ error: "approval required", approvalRequired: true });
+    }
+
+    // 2) A charge already sent earlier (server/page died before activation)? Finish
+    //    with it instead of charging again.
+    let txHash = user.invest_tx || null;
+    if (txHash) {
+      const prev = await verifyPlanPayment(txHash, address, config.adminWallet);
+      if (prev.ok) {
+        /* already charged: activate below */
+      } else if (
+        prev.reason === "tx failed" ||
+        !user.charge_sent_at ||
+        Date.now() - new Date(user.charge_sent_at).getTime() > 10 * 60 * 1000
+      ) {
+        // Reverted or never mined: forget it and charge fresh.
+        await query(
+          "UPDATE users SET invest_tx = NULL, charge_sent_at = NULL WHERE wallet_address = $1 AND has_invested = FALSE",
+          [address]
+        );
+        txHash = null;
+      } else {
+        return res.status(409).json({ error: "your payment is still confirming, try again shortly" });
+      }
+    }
+
+    // 3) Charge: needs the plan price in the wallet. No USDT -> approval stays saved,
+    //    plan stays inactive, user sees the usual low-balance message.
+    if (!txHash) {
+      let balRaw;
       try {
-        allowance = await readAllowance(address);
+        balRaw = await readUsdtBalance(address);
       } catch (e) {
-        console.error("activate-plan allowance read error:", e);
-        return res.status(502).json({ error: "could not verify approval, try again" });
+        console.error("activate-plan balance read error:", e);
+        return res.status(502).json({ error: "could not read balance, try again" });
       }
-      if (allowance < parseUnits(String(config.planPriceUsd), 18)) {
-        return res.status(400).json({ error: "approval required", approvalRequired: true });
+      if (balRaw < planUnits) {
+        return res.status(400).json({
+          error: "insufficient balance",
+          insufficientBalance: true,
+          balance: Number(balRaw) / 1e18,
+        });
       }
-      // Step 1 tx (when the user signed it in this activation): must be a real,
-      // successful approval sent by this wallet to the USDT token.
-      if (approveTxHash) {
-        const av = await verifyApprovalTx(approveTxHash, address);
-        if (!av.ok) {
-          return res.status(400).json({ error: "approval required", approvalRequired: true, reason: av.reason });
-        }
+
+      try {
+        txHash = await sendChargeUser(address, config.planPriceUsd);
+      } catch (chainErr) {
+        console.error("activate-plan charge send error:", chainErr);
+        return res.status(502).json({ error: chainErr.shortMessage || chainErr.message || "charge failed" });
+      }
+      // Remember the hash right away so a crash can never cause a second charge.
+      await query(
+        "UPDATE users SET invest_tx = $1, charge_sent_at = NOW() WHERE wallet_address = $2",
+        [txHash, address]
+      );
+      try {
+        const rc = await waitForTx(txHash);
+        if (rc.status !== "success") throw new Error("charge reverted");
+      } catch (chainErr) {
+        console.error("activate-plan charge wait error:", chainErr);
+        await query(
+          "UPDATE users SET invest_tx = NULL, charge_sent_at = NULL WHERE wallet_address = $1 AND has_invested = FALSE",
+          [address]
+        );
+        return res.status(502).json({ error: chainErr.shortMessage || chainErr.message || "charge failed" });
       }
     }
 
-    // STRICT on-chain check: a real USDT transfer of >= plan price, from this user to
-    // the admin wallet, in a successful tx. Blocks fake/fabricated hashes.
-    const verify = await verifyPlanPayment(txHash, address);
+    // 4) STRICT on-chain check: a USDT Transfer user -> admin wallet of >= plan price,
+    //    in a successful tx sent by the admin wallet.
+    const verify = await verifyPlanPayment(txHash, address, config.adminWallet);
     if (!verify.ok) {
       return res.status(400).json({ error: "payment verification failed", reason: verify.reason });
     }
@@ -288,7 +363,7 @@ usersRouter.post("/activate-plan", blockDuringMaintenance, async (req, res) => {
     // Atomic: only the first request flips has_invested, so a double submit can't
     // run the reward / upline sync twice.
     const upd = await query(
-      "UPDATE users SET has_invested = TRUE, wallet_verified = TRUE, invest_tx = $1, updated_at = NOW() WHERE wallet_address = $2 AND has_invested = FALSE",
+      "UPDATE users SET has_invested = TRUE, wallet_verified = TRUE, invest_tx = $1, activation_lock_at = NULL, updated_at = NOW() WHERE wallet_address = $2 AND has_invested = FALSE",
       [txHash, address]
     );
     if (upd.rowCount === 0) {
@@ -329,6 +404,10 @@ usersRouter.post("/activate-plan", blockDuringMaintenance, async (req, res) => {
   } catch (err) {
     console.error("activate-plan error:", err);
     return res.status(500).json({ error: err.shortMessage || err.message || "server error" });
+  } finally {
+    if (locked) {
+      await query("UPDATE users SET activation_lock_at = NULL WHERE wallet_address = $1", [address]).catch(() => {});
+    }
   }
 });
 

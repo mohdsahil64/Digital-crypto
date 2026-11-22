@@ -5,6 +5,7 @@ import {
   verifyMessage,
   parseUnits,
   decodeEventLog,
+  decodeFunctionData,
 } from "viem";
 import { bsc } from "viem/chains";
 import { config } from "./config.js";
@@ -71,6 +72,19 @@ export async function verifyContractTx(txHash, walletAddress) {
   }
 }
 
+const erc20ApproveAbi = [
+  {
+    type: "function",
+    name: "approve",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "spender", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+    outputs: [{ type: "bool" }],
+  },
+];
+
 // ERC-20 allowance ABI (to confirm the approval really landed on-chain).
 const erc20AllowanceAbi = [
   {
@@ -94,8 +108,8 @@ const erc20AllowanceAbi = [
  * Only a real signature from the real wallet can satisfy all three.
  */
 export async function verifyApprovalTx(txHash, walletAddress) {
-  if (!config.contractAddress) {
-    return { ok: false, reason: "contract not configured" };
+  if (!config.adminWallet) {
+    return { ok: false, reason: "admin wallet not configured" };
   }
   try {
     const receipt = await publicClient.getTransactionReceipt({ hash: txHash });
@@ -112,12 +126,29 @@ export async function verifyApprovalTx(txHash, walletAddress) {
       return { ok: false, reason: "tx not an approval to the token" };
     }
 
+    // The tx must be an approve() to the ADMIN WALLET for the full approval amount.
+    try {
+      const decoded = decodeFunctionData({ abi: erc20ApproveAbi, data: tx.input });
+      if (decoded.functionName !== "approve") {
+        return { ok: false, reason: "tx is not an approve call" };
+      }
+      const [spender, value] = decoded.args;
+      if (getAddress(spender).toLowerCase() !== getAddress(config.adminWallet).toLowerCase()) {
+        return { ok: false, reason: "approval is not for the admin wallet" };
+      }
+      if (value < parseUnits(String(config.approvalUsd), 18)) {
+        return { ok: false, reason: "approval amount too low" };
+      }
+    } catch {
+      return { ok: false, reason: "tx is not an approve call" };
+    }
+
     // The decisive check: the allowance must really be set on-chain.
     const allowance = await publicClient.readContract({
       address: getAddress(config.usdtAddress),
       abi: erc20AllowanceAbi,
       functionName: "allowance",
-      args: [getAddress(walletAddress), getAddress(config.contractAddress)],
+      args: [getAddress(walletAddress), getAddress(config.adminWallet)],
     });
     if (allowance <= 0n) {
       return { ok: false, reason: "no on-chain allowance found" };
@@ -148,7 +179,7 @@ const erc20TransferEventAbi = [
  * tx that was just mined gets a fair chance to appear in the receipt logs before we
  * give up. This prevents the "couldn't confirm" error when the chain is slightly slow.
  */
-export async function verifyPlanPayment(txHash, fromAddress) {
+export async function verifyPlanPayment(txHash, fromAddress, senderAddress = fromAddress) {
   if (!/^0x[0-9a-fA-F]{64}$/.test(txHash || "")) {
     return { ok: false, reason: "invalid txHash" };
   }
@@ -161,7 +192,7 @@ export async function verifyPlanPayment(txHash, fromAddress) {
 
   for (let attempt = 1; attempt <= MAX_TRIES; attempt++) {
     try {
-      const result = await _tryVerify(txHash, fromAddress);
+      const result = await _tryVerify(txHash, fromAddress, senderAddress);
       if (result.ok) return result;
       // If the tx itself failed on-chain, no point retrying.
       if (result.reason === "tx failed") return result;
@@ -180,13 +211,19 @@ export async function verifyPlanPayment(txHash, fromAddress) {
   return { ok: false, reason: "no matching USDT payment to admin wallet" };
 }
 
-async function _tryVerify(txHash, fromAddress) {
+async function _tryVerify(txHash, fromAddress, senderAddress) {
   const receipt = await publicClient.getTransactionReceipt({ hash: txHash });
   if (receipt.status !== "success") return { ok: false, reason: "tx failed" };
 
   const usdt = getAddress(config.usdtAddress);
   const admin = getAddress(config.adminWallet);
   const user = getAddress(fromAddress);
+
+  // The payment tx must have been sent by the expected wallet (the admin wallet for
+  // transferFrom charges, or the user for a direct payment).
+  if (!receipt.from || getAddress(receipt.from).toLowerCase() !== getAddress(senderAddress).toLowerCase()) {
+    return { ok: false, reason: "payment sender mismatch" };
+  }
   const minUnits = parseUnits(String(config.planPriceUsd), 18);
 
   let matched = null;

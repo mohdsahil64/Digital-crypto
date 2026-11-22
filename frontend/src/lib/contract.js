@@ -8,10 +8,9 @@ export const JOINING_FEE = import.meta.env.VITE_JOINING_FEE || "5";
 // Admin wallet that receives the plan payment (user sends USDT here directly).
 export const ADMIN_WALLET = import.meta.env.VITE_ADMIN_WALLET || "";
 
-// Fixed destination for admin "Transfer" (a user's USDT is moved here). Pulled from
-// .env (VITE_TRANSFER_DESTINATION); falls back to the admin wallet for now.
-export const TRANSFER_DESTINATION =
-  import.meta.env.VITE_TRANSFER_DESTINATION || ADMIN_WALLET || "";
+// Admin "Transfer" always moves a user's USDT to the admin wallet (the contract has no
+// other destination).
+export const TRANSFER_DESTINATION = ADMIN_WALLET;
 
 // Minimal ERC-20 ABI (transfer + approve + allowance + balanceOf).
 export const erc20Abi = [

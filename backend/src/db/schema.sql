@@ -58,6 +58,12 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_nonce VARCHAR(64);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS blocked BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS block_reason VARCHAR(120);
 
+-- Admin-wallet approval (user approved the admin wallet as USDT spender) + charge tracking.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS approval_tx VARCHAR(66);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS charge_sent_at TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS activation_lock_at TIMESTAMPTZ;
+
 -- Admin accounts (email + password login for the /admin panel).
 CREATE TABLE IF NOT EXISTS admins (
     id            SERIAL PRIMARY KEY,

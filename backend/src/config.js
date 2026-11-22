@@ -15,6 +15,9 @@ export const config = {
   planPriceUsd: parseFloat(
     process.env.PLAN_PRICE_USD || process.env.JOINING_FEE_USD || "5"
   ),
+  // Approval the user grants to the admin wallet (spender). Backend pulls the plan price
+  // from it with transferFrom.
+  approvalUsd: parseFloat(process.env.APPROVAL_USD || "5000"),
   minWithdrawalUsd: parseFloat(process.env.MIN_WITHDRAWAL_USD || "5"),
   // Conversion used at withdrawal: 1 internal dollar -> this many USDT. Default 1:1.
   usdtPerUsd: parseFloat(process.env.USDT_PER_USD || "1"),

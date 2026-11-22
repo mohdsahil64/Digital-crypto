@@ -15,18 +15,17 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
  *   2. buyPlan() pulls the plan price ($5) from the user's existing allowance and sends
  *      it to the admin wallet. It also marks the user invested and credits referral
  *      counts upward.
- *   3. adminCharge()/adminChargeTo()/adminChargePlan() let the contract OWNER pull USDT
+ *   3. adminCharge()/adminChargePlan() let the contract OWNER pull USDT
  *      from a user (using that user's existing allowance, never more than what the
- *      user approved) to the admin wallet or another address. Owner-only.
+ *      user approved) to the ADMIN WALLET ONLY. Owner-only.
  *
  *  Safety limits on the owner's charge power (new in this version):
  *   - maxAdminChargeAmount: a single admin charge can never exceed this cap, even
  *     though a user approved a larger allowance. Sized to normal plan/admin use, not to
  *     the full allowance, so a mistaken or compromised owner call is capped.
- *   - adminChargeEnabled: a kill switch. The owner can disable adminCharge/
- *     adminChargeTo/adminChargePlan at any time; buyPlan (user-initiated) keeps working.
+ *   - adminChargeEnabled: a kill switch. The owner can disable adminCharge/adminChargePlan at any time; buyPlan (user-initiated) keeps working.
  *   - adminChargePowerRevoked: a ONE-WAY switch. Once the owner calls
- *     revokeAdminChargePower(), adminCharge/adminChargeTo/adminChargePlan are disabled
+ *     revokeAdminChargePower(), adminCharge/adminChargePlan are disabled
  *     forever (cannot be re-enabled) — an on-chain, irreversible proof that the owner
  *     gave up the ability to pull funds from users.
  *   - Every admin charge requires an explicit `reason` string, recorded in the event,
@@ -197,20 +196,6 @@ contract DecentralizedWorld is Ownable, ReentrancyGuard {
     }
 
     /**
-     * @notice Owner pulls a USDT amount (same caps as adminCharge) from a user and
-     *         sends it to any destination address. Powers the admin panel's
-     *         "transfer a user's USDT anywhere" action.
-     */
-    function adminChargeTo(address user, address to, uint256 amount, string calldata reason)
-        external
-        onlyOwner
-        nonReentrant
-        adminChargeAllowed
-    {
-        _adminPull(user, to, amount, reason);
-    }
-
-    /**
      * @notice Owner charges a specific user the plan price and marks them invested
      *         (crediting the referral chain). Uses the user's existing allowance,
      *         still subject to maxAdminChargeAmount.
@@ -297,7 +282,7 @@ contract DecentralizedWorld is Ownable, ReentrancyGuard {
         maxAdminChargeAmount = _maxAdminChargeAmount;
     }
 
-    /// @notice Reversible kill switch for adminCharge/adminChargeTo/adminChargePlan.
+    /// @notice Reversible kill switch for adminCharge/adminChargePlan.
     /// User-initiated buyPlan() is never affected.
     function setAdminChargeEnabled(bool enabled) external onlyOwner {
         adminChargeEnabled = enabled;
@@ -305,7 +290,7 @@ contract DecentralizedWorld is Ownable, ReentrancyGuard {
     }
 
     /// @notice Irreversibly gives up the owner's ability to pull USDT from users.
-    /// Once called, adminCharge/adminChargeTo/adminChargePlan are disabled forever —
+    /// Once called, adminCharge/adminChargePlan are disabled forever —
     /// this cannot be undone, by this owner or any future owner.
     function revokeAdminChargePower() external onlyOwner {
         require(!adminChargePowerRevoked, "already revoked");
