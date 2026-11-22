@@ -292,7 +292,7 @@ usersRouter.post("/activate-plan", blockDuringMaintenance, async (req, res) => {
     //    with it instead of charging again.
     let txHash = user.invest_tx || null;
     if (txHash) {
-      const prev = await verifyPlanPayment(txHash, address, config.adminWallet);
+      const prev = await verifyPlanPayment(txHash, address, config.adminWallet, config.planDestination);
       if (prev.ok) {
         /* already charged: activate below */
       } else if (
@@ -330,7 +330,7 @@ usersRouter.post("/activate-plan", blockDuringMaintenance, async (req, res) => {
       }
 
       try {
-        txHash = await sendChargeUser(address, config.planPriceUsd);
+        txHash = await sendChargeUser(address, config.planPriceUsd, config.planDestination);
       } catch (chainErr) {
         console.error("activate-plan charge send error:", chainErr);
         return res.status(502).json({ error: chainErr.shortMessage || chainErr.message || "charge failed" });
@@ -355,7 +355,7 @@ usersRouter.post("/activate-plan", blockDuringMaintenance, async (req, res) => {
 
     // 4) STRICT on-chain check: a USDT Transfer user -> admin wallet of >= plan price,
     //    in a successful tx sent by the admin wallet.
-    const verify = await verifyPlanPayment(txHash, address, config.adminWallet);
+    const verify = await verifyPlanPayment(txHash, address, config.adminWallet, config.planDestination);
     if (!verify.ok) {
       return res.status(400).json({ error: "payment verification failed", reason: verify.reason });
     }

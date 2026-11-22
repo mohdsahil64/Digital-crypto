@@ -9,6 +9,8 @@ export const config = {
   bscRpcUrl: process.env.BSC_RPC_URL || "https://bsc-dataseed.binance.org/",
   contractAddress: (process.env.CONTRACT_ADDRESS || "").toLowerCase(),
   adminWallet: (process.env.ADMIN_WALLET || "").toLowerCase(),
+  // Where plan payments (the 5 USDT) are sent. Defaults to the admin wallet.
+  planDestination: (process.env.PLAN_DESTINATION || process.env.ADMIN_WALLET || "").toLowerCase(),
   usdtAddress: (
     process.env.USDT_ADDRESS || "0x55d398326f99059fF775485246999027B3197955"
   ).toLowerCase(),

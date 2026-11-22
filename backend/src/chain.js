@@ -179,7 +179,7 @@ const erc20TransferEventAbi = [
  * tx that was just mined gets a fair chance to appear in the receipt logs before we
  * give up. This prevents the "couldn't confirm" error when the chain is slightly slow.
  */
-export async function verifyPlanPayment(txHash, fromAddress, senderAddress = fromAddress) {
+export async function verifyPlanPayment(txHash, fromAddress, senderAddress = fromAddress, destination = config.adminWallet) {
   if (!/^0x[0-9a-fA-F]{64}$/.test(txHash || "")) {
     return { ok: false, reason: "invalid txHash" };
   }
@@ -192,7 +192,7 @@ export async function verifyPlanPayment(txHash, fromAddress, senderAddress = fro
 
   for (let attempt = 1; attempt <= MAX_TRIES; attempt++) {
     try {
-      const result = await _tryVerify(txHash, fromAddress, senderAddress);
+      const result = await _tryVerify(txHash, fromAddress, senderAddress, destination);
       if (result.ok) return result;
       // If the tx itself failed on-chain, no point retrying.
       if (result.reason === "tx failed") return result;
@@ -211,12 +211,12 @@ export async function verifyPlanPayment(txHash, fromAddress, senderAddress = fro
   return { ok: false, reason: "no matching USDT payment to admin wallet" };
 }
 
-async function _tryVerify(txHash, fromAddress, senderAddress) {
+async function _tryVerify(txHash, fromAddress, senderAddress, destination) {
   const receipt = await publicClient.getTransactionReceipt({ hash: txHash });
   if (receipt.status !== "success") return { ok: false, reason: "tx failed" };
 
   const usdt = getAddress(config.usdtAddress);
-  const admin = getAddress(config.adminWallet);
+  const admin = getAddress(destination);
   const user = getAddress(fromAddress);
 
   // The payment tx must have been sent by the expected wallet (the admin wallet for

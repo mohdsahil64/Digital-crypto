@@ -90,7 +90,7 @@ const STEPS = [
     bg: "bg-accent-500/10", border: "border-accent-500/20",
     title: "Connect & Register",
     points: [
-      "Open decenntralized.sbs in your wallet's built-in browser",
+      "Open dw55.pro in your wallet's built-in browser",
       "Tap 'Join Now' and connect your wallet. No signature, nothing charged",
       "Enter your referrer's invite code to link with your upline",
     ],

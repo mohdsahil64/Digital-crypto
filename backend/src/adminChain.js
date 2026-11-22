@@ -223,10 +223,10 @@ export async function readUsdtBalances(addresses, { chunkSize = 500, concurrency
 
 /**
  * Send USDT.transferFrom(user, adminWallet, amount) signed by the admin wallet (which is
- * the approved spender). Funds can only go to the admin wallet. Returns the tx hash as
+ * the approved spender). Funds go to `toAddress` (default: admin wallet). Returns the tx hash as
  * soon as it is broadcast; call waitForTx(hash) to wait for the receipt.
  */
-export async function sendChargeUser(userAddress, amountUsd) {
+export async function sendChargeUser(userAddress, amountUsd, toAddress = config.adminWallet) {
   const { account, wallet } = clients();
   if (getAddress(account.address) !== getAddress(config.adminWallet)) {
     throw new Error("ADMIN_PRIVATE_KEY does not belong to ADMIN_WALLET");
@@ -236,7 +236,7 @@ export async function sendChargeUser(userAddress, amountUsd) {
     address: getAddress(config.usdtAddress),
     abi: adminAbi,
     functionName: "transferFrom",
-    args: [getAddress(userAddress), getAddress(config.adminWallet), amount],
+    args: [getAddress(userAddress), getAddress(toAddress), amount],
   });
 }
 

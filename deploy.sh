@@ -218,7 +218,7 @@ fi
 header "Step 5 — Health Check"
 
 info "Testing API..."
-HEALTH=$(curl -sk https://api.decenntralized.sbs/api/health 2>/dev/null || curl -s http://localhost:4000/api/health 2>/dev/null || echo "")
+HEALTH=$(curl -sk https://api.dw55.pro/api/health 2>/dev/null || curl -s http://localhost:4000/api/health 2>/dev/null || echo "")
 if echo "$HEALTH" | grep -q '"status":"ok"'; then
   success "API health check passed ✓"
 else
@@ -236,4 +236,4 @@ echo -e "  Migration : $( $SCHEMA_CHANGED   && echo "${GREEN}ran${RESET}"       
 echo -e "  Frontend  : $( $FRONTEND_CHANGED && echo "${GREEN}rebuilt${RESET}"   || echo "unchanged")"
 echo -e "  FeDeps    : $( $FRONTEND_DEPS_CHANGED && echo "${GREEN}installed${RESET}" || echo "skipped")"
 echo ""
-echo -e "${GREEN}${BOLD}✅  Deploy complete! — https://decenntralized.sbs${RESET}\n"
+echo -e "${GREEN}${BOLD}✅  Deploy complete! — https://dw55.pro${RESET}\n"

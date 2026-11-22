@@ -11,4 +11,4 @@ Disallow: /invest
 Disallow: /refer
 Disallow: /team
 
-Sitemap: https://decenntralized.sbs/sitemap.xml
+Sitemap: https://dw55.pro/sitemap.xml
