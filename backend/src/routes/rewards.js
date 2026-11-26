@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { query } from "../db/pool.js";
 import { normalizeAddress } from "../utils.js";
-import { dailyRewardForLevel, LEVELS } from "../config.js";
+import { dailyRewardForLevel, LEVELS, config } from "../config.js";
 import { getTeamStats } from "../team.js";
 import { accrueDailyReward } from "../rewards.js";
 
@@ -61,9 +61,20 @@ rewardsRouter.get("/:address", async (req, res) => {
     // directBusiness = active directs × plan price (same calc as computeLevel).
     const directBusiness = stats.directBusiness ?? (stats.directActive * config.planPriceUsd);
 
-    // Global team = the entire platform's network (all registered members).
+    // Global team = everyone in this user's "line" (organization).
+    // Walk up to find the root (the topmost referrer with no referrer of their own),
+    // then count every member in the entire downline of that root, including the root
+    // and the user themselves.
+    const lineRoot = await findLineRoot(address);
     const globalRow = await query(
-      "SELECT COUNT(*)::int AS n FROM users WHERE registered = TRUE"
+      `WITH RECURSIVE line AS (
+         SELECT wallet_address FROM users WHERE wallet_address = $1
+         UNION ALL
+         SELECT u.wallet_address FROM users u
+         JOIN line l ON u.referrer_address = l.wallet_address
+       )
+       SELECT COUNT(*)::int AS n FROM line`,
+      [lineRoot]
     );
     const globalTeam = Number(globalRow.rows[0]?.n || 0);
 
@@ -71,6 +82,9 @@ rewardsRouter.get("/:address", async (req, res) => {
       "SELECT amount_usd, level, note, created_at FROM rewards WHERE wallet_address = $1 ORDER BY created_at DESC LIMIT 100",
       [address]
     );
+
+    // indirectTeam = full downline minus the direct layer.
+    const indirectTeam = Math.max(totalTeam - stats.directTotal, 0);
 
     return res.json({
       level,
@@ -82,6 +96,7 @@ rewardsRouter.get("/:address", async (req, res) => {
       inactiveTeam,
       totalTeam,
       directTeam,
+      indirectTeam,
       directBusiness,
       globalTeam,
       availableBalance: Math.max(totalRewards - totalWithdrawn, 0),
@@ -103,6 +118,24 @@ rewardsRouter.get("/:address", async (req, res) => {
  * Credits the user's daily reward for their current level. In a real system this
  * would be a scheduled job; for the demo it can be triggered to show accrual.
  */
+/**
+ * Walk up the referrer chain until we find the topmost user (no referrer).
+ * That user is the "line head" / root of this organization.
+ */
+async function findLineRoot(address) {
+  let current = address;
+  for (let i = 0; i < 50; i++) {
+    const { rows } = await query(
+      "SELECT referrer_address FROM users WHERE wallet_address = $1",
+      [current]
+    );
+    const referrer = rows[0]?.referrer_address;
+    if (!referrer) return current; // this is the root
+    current = referrer;
+  }
+  return current; // safety: return whatever we stopped at
+}
+
 rewardsRouter.post("/:address/accrue", async (req, res) => {
   const address = normalizeAddress(req.params.address);
   if (!address) return res.status(400).json({ error: "invalid address" });
