@@ -1,10 +1,9 @@
 import { useEffect, useState, useCallback } from "react";
-import { Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import {
   Users,
   UserPlus,
   Globe,
-  Network,
   Trophy,
   Lock,
   Check,
@@ -12,8 +11,9 @@ import {
   Sparkles,
   ChevronRight,
   ChevronLeft,
-  ArrowRight,
   BadgeCheck,
+  Copy,
+  CheckCheck,
 } from "lucide-react";
 import AppLayout from "../components/AppLayout.jsx";
 import Spinner from "../components/Spinner.jsx";
@@ -22,25 +22,23 @@ import { useSession } from "../lib/session.jsx";
 
 export default function Team() {
   const { address, user } = useSession();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [levels, setLevels] = useState([]);
   const [currentLevel, setCurrentLevel] = useState(0);
   const [rewards, setRewards] = useState(null);
-  const [team, setTeam] = useState(null);
 
   const load = useCallback(async () => {
     if (!address) return;
     setLoading(true);
     try {
-      const [lv, rw, tm] = await Promise.all([
+      const [lv, rw] = await Promise.all([
         api.getLevels().catch(() => ({ levels: [] })),
         api.getRewards(address).catch(() => null),
-        api.getTeam(address).catch(() => null),
       ]);
       setLevels(lv.levels || []);
       setCurrentLevel(rw?.level ?? 0);
       setRewards(rw);
-      setTeam(tm);
     } catch (e) {
       console.error(e);
     } finally {
@@ -58,92 +56,83 @@ export default function Team() {
     );
   }
 
-  // Use active directs for directBusiness (from backend — already correct).
   const directBusiness = rewards?.directBusiness ?? 0;
   const directCount    = rewards?.directTeam    ?? user?.directCount ?? 0;
   const indirectCount  = rewards?.indirectTeam  ?? 0;
-  const totalTeam      = rewards?.totalTeam     ?? user?.teamCount   ?? 0;
   const globalTeam     = rewards?.globalTeam    ?? 0;
-
-  // Direct referrals list (active + inactive) from the team endpoint.
-  const directList = team?.directReferrals ?? [];
+  const activeTeam     = rewards?.activeTeam    ?? 0;
 
   return (
     <AppLayout title="My team">
 
-      {/* ── Counts row ── */}
+      {/* ── Clickable count tiles ── */}
       <div className="grid grid-cols-3 gap-2.5">
-        <StatTile icon={UserPlus}  tone="text-amber-400"   label="Direct"   value={directCount}  sub="You referred" />
-        <StatTile icon={Users}     tone="text-fuchsia-400" label="My team"  value={indirectCount} sub="Indirect" />
-        <StatTile icon={Globe}     tone="text-sky-400"     label="Global"   value={globalTeam}   sub="Your line" />
+        <ClickTile
+          icon={UserPlus} tone="text-amber-400"
+          label="Direct" value={directCount} sub="You referred"
+          onClick={() => navigate("/team/direct")}
+        />
+        <ClickTile
+          icon={Users} tone="text-fuchsia-400"
+          label="My team" value={indirectCount} sub="Indirect"
+          onClick={() => navigate("/team/indirect")}
+        />
+        <ClickTile
+          icon={Globe} tone="text-sky-400"
+          label="Global" value={globalTeam} sub="Your line"
+          onClick={() => navigate("/team/global")}
+        />
       </div>
 
-      {/* ── Direct referrals list ── */}
-      <h2 className="mt-6 flex items-center gap-2 font-display text-sm font-semibold uppercase tracking-wide text-slate-400">
-        <UserPlus className="h-4 w-4 text-amber-400" /> Direct referrals
-      </h2>
-      <p className="mt-1 text-xs text-slate-500">
-        People who joined using your referral code or link.
-      </p>
 
-      {directList.length === 0 ? (
-        <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-8 text-center text-sm text-slate-500">
-          No direct referrals yet — share your link to get started.
-        </div>
-      ) : (
-        <ul className="mt-3 space-y-2">
-          {directList.map((m) => (
-            <DirectMemberRow key={m.walletAddress} member={m} />
-          ))}
-        </ul>
-      )}
 
       {/* ── Rewards roadmap ── */}
-      <h2 className="mt-8 flex items-center gap-2 font-display text-sm font-semibold uppercase tracking-wide text-slate-400">
-        <Sparkles className="h-4 w-4 text-accent-400" /> Rewards roadmap
+      <h2 className="mt-8 font-display text-base font-bold text-slate-100">
+        Rewards Roadmap
       </h2>
-      <p className="mt-1 text-xs text-slate-500">
-        Each level needs active plan holders — just joining doesn't count.
-      </p>
+      <ul className="mt-2 space-y-1">
+        {[
+          "Active plan members only count toward level targets",
+          "More active team = higher daily USDT reward",
+          "Level upgrades automatically as your team grows",
+        ].map((t) => (
+          <li key={t} className="flex items-center gap-2 text-xs text-slate-400">
+            <BadgeCheck className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
+            {t}
+          </li>
+        ))}
+      </ul>
 
       <LevelSlider
         levels={levels}
         currentLevel={currentLevel}
         directBusiness={directBusiness}
-        teamCount={totalTeam}
+        teamCount={activeTeam}
       />
 
-      {/* ── Team tree link ── */}
-      <Link
-        to="/team/tree"
-        className="group mt-6 flex items-center gap-3 rounded-2xl border border-accent-500/30 bg-accent-500/[0.07] px-4 py-4 transition hover:border-accent-500/50 hover:bg-accent-500/10"
-      >
-        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-accent-500/15 text-accent-400">
-          <Network className="h-5 w-5" />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block text-sm font-semibold text-slate-100">View your team tree</span>
-          <span className="block text-xs text-slate-400">
-            See your full downline — who joined under whom
-          </span>
-        </span>
-        <ArrowRight className="h-4 w-4 shrink-0 text-accent-400 transition group-hover:translate-x-0.5" />
-      </Link>
     </AppLayout>
   );
 }
 
 /** One row in the direct referrals list */
 function DirectMemberRow({ member }) {
+  const [copied, setCopied] = useState(false);
   const short = `${member.walletAddress.slice(0, 6)}…${member.walletAddress.slice(-4)}`;
   const joined = member.joinedAt
     ? new Date(member.joinedAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })
     : null;
 
+  function copy(e) {
+    e.stopPropagation();
+    navigator.clipboard.writeText(member.walletAddress).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  }
+
   return (
     <li className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-navy-900/70 px-3.5 py-3">
       <div className="flex items-center gap-2.5 min-w-0">
-        {/* Avatar circle */}
         <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold ${member.hasInvested ? "bg-emerald-500/20 text-emerald-300" : "bg-white/5 text-slate-500"}`}>
           {member.walletAddress.slice(2, 4).toUpperCase()}
         </span>
@@ -153,17 +142,48 @@ function DirectMemberRow({ member }) {
         </div>
       </div>
 
-      {/* Plan active badge */}
-      {member.hasInvested ? (
-        <span className="flex shrink-0 items-center gap-1 rounded-full bg-emerald-500/15 px-2.5 py-1 text-[11px] font-medium text-emerald-300">
-          <BadgeCheck className="h-3.5 w-3.5" /> Active
-        </span>
-      ) : (
-        <span className="flex shrink-0 items-center gap-1 rounded-full bg-white/5 px-2.5 py-1 text-[11px] font-medium text-slate-500">
-          <Lock className="h-3 w-3" /> Inactive
-        </span>
-      )}
+      <div className="flex shrink-0 items-center gap-2">
+        {/* Copy address button */}
+        <button
+          onClick={copy}
+          className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-slate-400 transition hover:bg-white/10 hover:text-slate-200"
+          title="Copy address"
+        >
+          {copied ? <CheckCheck className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+        </button>
+
+        {/* Plan active badge */}
+        {member.hasInvested ? (
+          <span className="flex items-center gap-1 rounded-full bg-emerald-500/15 px-2.5 py-1 text-[11px] font-medium text-emerald-300">
+            <BadgeCheck className="h-3.5 w-3.5" /> Active
+          </span>
+        ) : (
+          <span className="flex items-center gap-1 rounded-full bg-white/5 px-2.5 py-1 text-[11px] font-medium text-slate-500">
+            <Lock className="h-3 w-3" /> Inactive
+          </span>
+        )}
+      </div>
     </li>
+  );
+}
+
+/** Clickable stat tile */
+function ClickTile({ icon: Icon, label, value, sub, tone = "text-accent-400", onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      className="rounded-xl border border-white/10 bg-navy-900/70 p-3 backdrop-blur transition hover:border-accent-500/40 hover:bg-navy-800/80 active:scale-95 text-left w-full"
+    >
+      <div className="flex items-center gap-1.5">
+        <span className="flex h-6 w-6 items-center justify-center rounded-md bg-white/5">
+          {Icon && <Icon className={`h-3.5 w-3.5 ${tone}`} />}
+        </span>
+        <span className="text-[10px] font-medium uppercase tracking-wide text-slate-400">{label}</span>
+      </div>
+      <p className="mt-2 font-display text-xl font-bold">{value}</p>
+      {sub && <p className="mt-0.5 text-[10px] text-slate-500">{sub}</p>}
+      <p className="mt-1 text-[9px] text-accent-400/70">Tap to view →</p>
+    </button>
   );
 }
 
@@ -342,19 +362,4 @@ function Requirement({ label, have, need, achieved, prefix = "" }) {
   );
 }
 
-function StatTile({ icon: Icon, label, value, sub, tone = "text-accent-400" }) {
-  return (
-    <div className="rounded-xl border border-white/10 bg-navy-900/70 p-3 backdrop-blur transition hover:border-white/20">
-      <div className="flex items-center gap-1.5">
-        <span className="flex h-6 w-6 items-center justify-center rounded-md bg-white/5">
-          {Icon && <Icon className={`h-3.5 w-3.5 ${tone}`} />}
-        </span>
-        <span className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
-          {label}
-        </span>
-      </div>
-      <p className="mt-2 font-display text-xl font-bold">{value}</p>
-      {sub && <p className="mt-0.5 text-[10px] text-slate-500">{sub}</p>}
-    </div>
-  );
-}
+

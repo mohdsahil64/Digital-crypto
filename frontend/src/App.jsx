@@ -6,6 +6,9 @@ import Invest from "./pages/Invest.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
 import Refer from "./pages/Refer.jsx";
 import Team from "./pages/Team.jsx";
+import TeamDirect from "./pages/TeamDirect.jsx";
+import TeamIndirect from "./pages/TeamIndirect.jsx";
+import TeamGlobal from "./pages/TeamGlobal.jsx";
 import TeamTree from "./pages/TeamTree.jsx";
 import Withdraw from "./pages/Withdraw.jsx";
 import History from "./pages/History.jsx";
@@ -58,6 +61,9 @@ export default function App() {
       <Route path="/dashboard" element={<Protected require="registered"><Dashboard /></Protected>} />
       <Route path="/refer" element={<Protected require="registered"><Refer /></Protected>} />
       <Route path="/team" element={<Protected require="registered"><Team /></Protected>} />
+      <Route path="/team/direct" element={<Protected require="registered"><TeamDirect /></Protected>} />
+      <Route path="/team/indirect" element={<Protected require="registered"><TeamIndirect /></Protected>} />
+      <Route path="/team/global" element={<Protected require="registered"><TeamGlobal /></Protected>} />
       <Route path="/team/tree" element={<Protected require="registered"><TeamTree /></Protected>} />
       <Route path="/withdraw" element={<Protected require="registered"><Withdraw /></Protected>} />
       <Route path="/history" element={<Protected require="registered"><History /></Protected>} />

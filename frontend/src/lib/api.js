@@ -39,6 +39,8 @@ export const api = {
     request(`/api/users/${address}/usdt-balance`),
   health: () => request("/api/health"),
   getTeam: (address) => request(`/api/team/${address}`),
+  getTeamIndirect: (address) => request(`/api/team/${address}/indirect`),
+  getTeamGlobal: (address) => request(`/api/team/${address}/global`),
   getLevels: () => request("/api/rewards/levels"),
   getRewards: (address) => request(`/api/rewards/${address}`),
   accrue: (address) =>
